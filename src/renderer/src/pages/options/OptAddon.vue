@@ -14,55 +14,71 @@
                 <div v-if="card.description" class="tip">
                     {{ card.description }}
                 </div>
-                <div v-for="item in card.items" :key="item.id" class="opt-item">
-                    <template v-if="item.type === 'switch'">
-                        <font-awesome-icon
-                            :icon="item.icon || ['fas', 'robot']" />
+                <template v-for="row in groupedRows(card)" :key="row.key">
+                    <!-- 分组标题：整行点击折叠 / 展开 -->
+                    <div v-if="row.kind === 'group'" class="opt-group"
+                        :class="{ 'is-collapsed': isCollapsed(row.item) }"
+                        @click="onToggleGroup(row.item)">
+                        <font-awesome-icon :icon="row.item.icon || ['fas', 'folder']" />
                         <div>
-                            <label :for="`opt-addon-switch-${item.id}`">{{ item.label }}</label>
-                            <span v-if="item.description">{{ item.description }}</span>
+                            <label>{{ row.item.label }}</label>
+                            <span v-if="row.item.description">{{ row.item.description }}</span>
+                        </div>
+                        <span class="opt-group-caret">{{ isCollapsed(row.item) ? '▸' : '▾' }}</span>
+                    </div>
+                    <div v-else class="opt-item">
+                    <template v-if="row.item.type === 'switch'">
+                        <font-awesome-icon
+                            :icon="row.item.icon || ['fas', 'robot']" />
+                        <div>
+                            <label :for="`opt-addon-switch-${row.item.id}`">{{ row.item.label }}</label>
+                            <span v-if="row.item.description">{{ row.item.description }}</span>
                         </div>
                         <label class="ss-switch">
-                            <input :id="`opt-addon-switch-${item.id}`" :checked="getItemValue(item) === true"
-                                type="checkbox" @change="onSwitchChange($event, item)">
+                            <input :id="`opt-addon-switch-${row.item.id}`" :checked="getItemValue(row.item) === true"
+                                type="checkbox" @change="onSwitchChange($event, row.item)">
                             <div><div /></div>
                         </label>
                     </template>
-                    <template v-else-if="item.type === 'input'">
+                    <template v-else-if="row.item.type === 'input'">
                         <font-awesome-icon
-                            :icon="item.icon || ['fas', 'paper-plane']" />
+                            :icon="row.item.icon || ['fas', 'paper-plane']" />
                         <div>
-                            <label :for="`opt-addon-input-${item.id}`">{{ item.label }}</label>
-                            <span v-if="item.description">{{ item.description }}</span>
+                            <label :for="`opt-addon-input-${row.item.id}`">{{ row.item.label }}</label>
+                            <span v-if="row.item.description">{{ row.item.description }}</span>
                         </div>
-                        <input :id="`opt-addon-input-${item.id}`" :value="getItemValue(item) ?? ''" class="ss-input"
+                        <input :id="`opt-addon-input-${row.item.id}`" :value="getItemValue(row.item) ?? ''"
+                            class="ss-input"
                             style="width: 150px"
-                            type="text" @input="onInputChange($event, item)">
+                            type="text" @input="onInputChange($event, row.item)">
                     </template>
-                    <template v-else-if="item.type === 'password'">
+                    <template v-else-if="row.item.type === 'password'">
                         <font-awesome-icon
-                            :icon="item.icon || ['fas', 'key']" />
+                            :icon="row.item.icon || ['fas', 'key']" />
                         <div>
-                            <label :for="`opt-addon-password-${item.id}`">{{ item.label }}</label>
-                            <span v-if="item.description">{{ item.description }}</span>
+                            <label :for="`opt-addon-password-${row.item.id}`">{{ row.item.label }}</label>
+                            <span v-if="row.item.description">{{ row.item.description }}</span>
                         </div>
-                        <input :id="`opt-addon-password-${item.id}`" :value="getItemValue(item) ?? ''" class="ss-input"
+                        <input :id="`opt-addon-password-${row.item.id}`" :value="getItemValue(row.item) ?? ''"
+                            class="ss-input"
                             style="width: 150px"
-                            type="password" @input="onInputChange($event, item)">
+                            type="password" @input="onInputChange($event, row.item)">
                     </template>
-                    <template v-else-if="item.type === 'select'">
-                        <font-awesome-icon v-if="item.icon" :icon="item.icon" />
-                        <div v-if="item.label || item.description">
-                            <label v-if="item.label" :for="`opt-addon-select-${item.id}`">{{ item.label }}</label>
-                            <span v-if="item.description">{{ item.description }}</span>
+                    <template v-else-if="row.item.type === 'select'">
+                        <font-awesome-icon v-if="row.item.icon" :icon="row.item.icon" />
+                        <div v-if="row.item.label || row.item.description">
+                            <label v-if="row.item.label" :for="`opt-addon-select-${row.item.id}`">
+                                {{ row.item.label }}
+                            </label>
+                            <span v-if="row.item.description">{{ row.item.description }}</span>
                         </div>
                         <div class="select-wrapper">
                             <select
-                                :id="`opt-addon-select-${item.id}`"
-                                :value="getItemValue(item) ?? (item.options?.[0]?.value ?? '')"
-                                @change="onSelectChange($event, item)">
+                                :id="`opt-addon-select-${row.item.id}`"
+                                :value="getItemValue(row.item) ?? (row.item.options?.[0]?.value ?? '')"
+                                @change="onSelectChange($event, row.item)">
                                 <option
-                                    v-for="opt in item.options || []"
+                                    v-for="opt in row.item.options || []"
                                     :key="String(opt.value)"
                                     :value="opt.value">
                                     {{ opt.label }}
@@ -70,17 +86,19 @@
                             </select>
                         </div>
                     </template>
-                    <template v-else-if="item.type === 'button'">
-                        <font-awesome-icon v-if="item.icon" :icon="item.icon" />
-                        <div v-if="item.label || item.description">
-                            <span v-if="item.label">{{ item.label }}</span>
-                            <span v-if="item.description">{{ item.description }}</span>
+                    <template v-else-if="row.item.type === 'button'">
+                        <font-awesome-icon v-if="row.item.icon" :icon="row.item.icon" />
+                        <div v-if="row.item.label || row.item.description">
+                            <span v-if="row.item.label">{{ row.item.label }}</span>
+                            <span v-if="row.item.description">{{ row.item.description }}</span>
                         </div>
-                        <button class="ss-button" style="width: 100px; font-size: 0.8rem" @click="onClickButton(item)">
-                            {{ item.label }}
+                        <button class="ss-button" style="width: 100px; font-size: 0.8rem"
+                            @click="onClickButton(row.item)">
+                            {{ row.item.label }}
                         </button>
                     </template>
-                </div>
+                    </div>
+                </template>
             </div>
         </template>
         <template v-else>
@@ -100,6 +118,7 @@
     import {
         extraOptionCards,
         runAS,
+        type ExtraOptionCard,
         type ExtraOptionItem,
     } from '@renderer/function/option'
 
@@ -109,6 +128,47 @@
     const settingsStore = useSettingsStore()
 
     const cards = extraOptionCards
+
+    /**
+     * 把卡片的扁平 items 切成「分组标题 + 子项」的行。
+     *
+     * 插件注册时先注册一个 type='group' 的标题项，后面注册的项就归进这一组，
+     * 直到遇到下一个 group。这样插件不用改自己在哪注册，只要按顺序注册即可；
+     * 没有 group 的卡片行为和以前完全一样（一行一项）。
+     */
+    function groupedRows(card: ExtraOptionCard) {
+        const rows: { kind: 'group' | 'item'; key: string; item: ExtraOptionItem }[] = []
+        let current: ExtraOptionItem | null = null
+        for (const item of card.items) {
+            if (item.type === 'group') {
+                current = item
+                rows.push({ kind: 'group', key: item.id, item })
+                continue
+            }
+            // 折叠中的分组：子项整组不渲染
+            if (current && isCollapsed(current)) continue
+            rows.push({ kind: 'item', key: item.id, item })
+        }
+        return rows
+    }
+
+    /** 分组的折叠状态就存在它自己的 optionKey 上（true = 折叠） */
+    function isCollapsed(item: ExtraOptionItem) {
+        return getItemValue(item) === true
+    }
+
+    function onToggleGroup(item: ExtraOptionItem) {
+        const next = !isCollapsed(item)
+        if (item.optionKey) runAS(item.optionKey, next)
+        if (typeof item.callback === 'function') {
+            try {
+                item.callback(next)
+            } catch (e) {
+                // eslint-disable-next-line no-console
+                console.error('extra option group callback error:', e)
+            }
+        }
+    }
 
     function getItemValue(item: ExtraOptionItem): any {
         const key = item.optionKey
@@ -161,6 +221,45 @@
     }
 </script>
 <style scoped>
+/* 分组标题行：与下面的设置项视觉上有区分，整行可点 */
+.opt-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 6px 0 2px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    cursor: pointer;
+    user-select: none;
+    background: color-mix(in srgb, var(--color-font-2) 8%, transparent);
+    transition: background .15s;
+}
+.opt-group:hover {
+    background: color-mix(in srgb, var(--color-font-2) 14%, transparent);
+}
+.opt-group > div {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.opt-group > div > label {
+    font-size: 0.85rem;
+    color: var(--color-font);
+    cursor: pointer;
+}
+.opt-group > div > span {
+    font-size: 0.7rem;
+    color: var(--color-font-2);
+}
+.opt-group-caret {
+    margin-left: auto;
+    font-size: 0.75rem;
+    color: var(--color-main);
+}
+.opt-group.is-collapsed {
+    opacity: .78;
+}
 .empty {
     margin: 0 auto;
     width: 50%;

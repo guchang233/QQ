@@ -36,7 +36,12 @@ let cacheConfigs: { [key: string]: any }
 
 // =============== 附加设置结构 ===============
 
-export type ExtraOptionItemType = 'switch' | 'select' | 'input'| 'password' | 'button'
+/**
+ * 附加设置项类型。
+ * `group` 是插件框架加的分组标题项：它下面注册的项归进这一组，点标题可折叠 / 展开，
+ * 折叠状态按 optionKey 持久化（没有 optionKey 就只跟随 defaultValue）。
+ */
+export type ExtraOptionItemType = 'switch' | 'select' | 'input'| 'password' | 'button' | 'group'
 
 export interface ExtraOptionItem {
     id: string
