@@ -67,6 +67,11 @@ export const DEFAULT_SETTINGS = {
     dockOpen: false,
     /** 悬浮窗位置 { x, y }；null 表示停在默认的右下角 */
     dockPos: null,
+    /**
+     * 悬浮窗里各设置分组的展开状态（分组 key -> true 展开 / false 折叠）。
+     * 只记用户主动改过的分组，没记的按默认值（见 ui/dock.js 的 DOCK_SECTIONS）。
+     */
+    dockGroups: {},
 
     // —— 归档（体积控制） ——
     /** 归档导出目录；留空则用主进程的默认目录（<userData>/laya-insight-archive） */
@@ -196,6 +201,7 @@ export class PluginStore {
         return {
             open: this.settings.dockOpen !== false,
             pos: valid ? { x: pos.x, y: pos.y } : null,
+            groups: { ...(this.settings.dockGroups || {}) },
         }
     }
 
@@ -207,6 +213,13 @@ export class PluginStore {
             next.dockPos = pos && Number.isFinite(pos.x) && Number.isFinite(pos.y)
                 ? { x: pos.x, y: pos.y }
                 : null
+        }
+        // 分组状态是「合并」语义：一次只改一个分组，不能把别的分组抹掉
+        if (patch.groups && typeof patch.groups === 'object') {
+            next.dockGroups = {
+                ...(this.settings.dockGroups || {}),
+                ...patch.groups,
+            }
         }
         return this.saveSettings(next)
     }

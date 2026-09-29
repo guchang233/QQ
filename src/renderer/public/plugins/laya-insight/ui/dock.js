@@ -32,6 +32,35 @@ const DOCK_ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"
 /** 位置复位的留白 */
 const EDGE_GAP = 8
 
+/** 拖动判定阈值：位移小于它算点击，避免「点一下球却拖不动 / 拖一下却展开了」 */
+const DRAG_THRESHOLD = 4
+
+/**
+ * 设置分组。每一组都能折叠 / 展开，状态按 key 存在 store.dockGroups 里。
+ * `open` 是首次使用（或该组没被用户动过）时的默认状态：
+ * 常用的一进来就展开，低频的（加速 / 导出）默认收起，面板才不至于太长。
+ */
+const DOCK_SECTIONS = [
+    { key: 'authorize', title: '分析授权', open: true },
+    { key: 'display', title: '显示', open: true },
+    { key: 'runtime', title: '推理后端与加速', open: false },
+    { key: 'archive', title: '导出与防卡顿', open: false },
+    { key: 'entries', title: '数据与入口', open: true },
+]
+
+/**
+ * 把拖动结果夹在视口内：不管怎么甩，悬浮窗都不会被拖出屏幕外找不回来。
+ * 抽成纯函数是为了能直接单测（组件里没法在 node 里渲染）。
+ */
+export function clampDockPosition(left, top, width, height, viewport) {
+    const maxX = Math.max(EDGE_GAP, viewport.width - width - EDGE_GAP)
+    const maxY = Math.max(EDGE_GAP, viewport.height - height - EDGE_GAP)
+    return {
+        x: Math.min(Math.max(EDGE_GAP, left), maxX),
+        y: Math.min(Math.max(EDGE_GAP, top), maxY),
+    }
+}
+
 /**
  * 构建悬浮窗组件。
  * @param {object} deps
@@ -41,7 +70,7 @@ const EDGE_GAP = 8
  * @param {object} deps.actions  插件主模块暴露的动作集合
  */
 export function createDockComponent({ host, runtime, store, actions }) {
-    const { h, defineComponent, ref, reactive, computed, onMounted, onBeforeUnmount } = host.vue
+    const { h, defineComponent, ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } = host.vue
 
     return defineComponent({
         name: 'LayaInsightDock',
@@ -49,6 +78,12 @@ export function createDockComponent({ host, runtime, store, actions }) {
             const savedDock = store.getDockState()
             const open = ref(savedDock.open)
             const pos = ref(savedDock.pos)
+            /** 分组折叠状态：默认表 + 用户存过的覆盖 */
+            const sections = reactive({})
+            DOCK_SECTIONS.forEach((item) => {
+                sections[item.key] = savedDock.groups[item.key] === true
+                    || (savedDock.groups[item.key] === undefined && item.open)
+            })
 
             const dragging = ref(false)
             const busy = ref(false)
@@ -102,7 +137,15 @@ export function createDockComponent({ host, runtime, store, actions }) {
             })
 
             const panelRef = ref(null)
+            /** 悬浮球元素；球也要能拖动，所以单独留一个引用 */
+            const ballRef = ref(null)
             const running = computed(() => busy.value || pipelineRunning.value)
+
+            /** 折叠 / 展开某一组，并记住状态 */
+            const toggleSection = (key) => {
+                sections[key] = !sections[key]
+                store.saveDockState({ groups: { [key]: sections[key] } })
+            }
 
             const modelText = computed(() => {
                 const value = status.value
@@ -128,8 +171,13 @@ export function createDockComponent({ host, runtime, store, actions }) {
                 return `下载中（${download.filesDone + 1}/${download.filesTotal}）${download.file}${filePart}`
             })
 
-            const panelStyle = computed(() => {
-                if (!pos.value) return {}
+            /**
+             * 位置样式：球与面板共用同一份坐标。
+             * 没拖过时返回 null（保留 CSS 里的「右下角」默认定位），拖过之后
+             * 一律用 left/top，并把 right/bottom 顶掉，否则两者冲突会拖不动。
+             */
+            const positionStyle = computed(() => {
+                if (!pos.value) return null
                 return {
                     left: `${pos.value.x}px`,
                     top: `${pos.value.y}px`,
@@ -183,12 +231,34 @@ export function createDockComponent({ host, runtime, store, actions }) {
 
             //#region == 操作 -------------------------------------------------------
 
+            /**
+             * 把当前位置按「现在这个元素」的尺寸重新夹一次。
+             * 球是 46px、面板是 322px，共享同一套坐标；如果球被拖到很靠右，
+             * 直接展开面板就会有一大截跑到视口外面，所以每次切换形态都夹一遍。
+             */
+            const clampIntoView = () => {
+                const el = open.value ? panelRef.value : ballRef.value
+                if (!el || !pos.value) return
+                const rect = el.getBoundingClientRect()
+                const next = clampDockPosition(pos.value.x, pos.value.y,
+                    rect.width, rect.height,
+                    { width: window.innerWidth, height: window.innerHeight })
+                if (next.x !== pos.value.x || next.y !== pos.value.y) {
+                    pos.value = next
+                    store.saveDockState({ pos: next })
+                }
+            }
+
             const setOpen = (value) => {
                 open.value = value
                 store.saveDockState({ open: value })
                 if (value) {
                     refreshContext()
                     refreshStatus()
+                    // 等面板真的渲出来再量尺寸，否则量到的是球
+                    nextTick(clampIntoView)
+                } else {
+                    clampIntoView()
                 }
             }
 
@@ -386,37 +456,81 @@ export function createDockComponent({ host, runtime, store, actions }) {
 
             //#region == 拖动 -------------------------------------------------------
 
-            let dragOrigin = null
+            /**
+             * 拖动状态。球和面板共用一套逻辑：
+             *   - 位移小于 DRAG_THRESHOLD 视为点击（球就是「点一下展开」），
+             *     超过才算拖动，所以「想点开却不小心抖了一下」不会误判成拖动；
+             *   - 尺寸只在按下时量一次，避免每帧 getBoundingClientRect 触发重排；
+             *   - 拖动结束后把这一下标记为「已拖动」，紧随其后的 click 要吞掉，
+             *     否则拖完球会顺手展开面板。
+             */
+            let drag = null
+            let suppressClick = false
 
             const onDragMove = (event) => {
-                if (!dragOrigin || !panelRef.value) return
-                const rect = panelRef.value.getBoundingClientRect()
-                const maxX = Math.max(EDGE_GAP, window.innerWidth - rect.width - EDGE_GAP)
-                const maxY = Math.max(EDGE_GAP, window.innerHeight - rect.height - EDGE_GAP)
-                const x = Math.min(Math.max(EDGE_GAP, dragOrigin.left + (event.clientX - dragOrigin.x)), maxX)
-                const y = Math.min(Math.max(EDGE_GAP, dragOrigin.top + (event.clientY - dragOrigin.y)), maxY)
-                pos.value = { x, y }
+                if (!drag) return
+                const dx = event.clientX - drag.x
+                const dy = event.clientY - drag.y
+                if (!drag.moved && Math.abs(dx) + Math.abs(dy) < DRAG_THRESHOLD) return
+                drag.moved = true
+                dragging.value = true
+                const rect = drag.rect
+                pos.value = clampDockPosition(
+                    drag.left + dx,
+                    drag.top + dy,
+                    rect.width,
+                    rect.height,
+                    { width: window.innerWidth, height: window.innerHeight },
+                )
             }
 
             const onDragEnd = () => {
-                if (dragging.value && pos.value) store.saveDockState({ pos: pos.value })
+                const moved = drag ? drag.moved : false
+                drag = null
+                if (moved && pos.value) store.saveDockState({ pos: pos.value })
                 dragging.value = false
-                dragOrigin = null
+                // click 紧跟 mouseup 同步派发，用宏任务再放开，刚好只吞掉这一次
+                suppressClick = moved
+                if (moved) setTimeout(() => { suppressClick = false }, 0)
                 window.removeEventListener('mousemove', onDragMove)
                 window.removeEventListener('mouseup', onDragEnd)
             }
 
-            const onDragStart = (event) => {
+            /**
+             * 按下即进入「可能的拖动」。
+             * @param {MouseEvent} event
+             * @param {HTMLElement|null} el 被拖动的元素（球 / 面板）
+             */
+            const beginDrag = (event, el) => {
                 if (event.button !== 0) return
-                // 头部里的按钮不该触发拖动
-                if (event.target && event.target.closest && event.target.closest('button')) return
-                const rect = panelRef.value?.getBoundingClientRect()
+                const node = el || panelRef.value || ballRef.value
+                const rect = node?.getBoundingClientRect()
                 if (!rect) return
-                dragOrigin = { x: event.clientX, y: event.clientY, left: rect.left, top: rect.top }
-                dragging.value = true
+                drag = {
+                    x: event.clientX,
+                    y: event.clientY,
+                    left: rect.left,
+                    top: rect.top,
+                    rect,
+                    moved: false,
+                }
                 window.addEventListener('mousemove', onDragMove)
                 window.addEventListener('mouseup', onDragEnd)
                 event.preventDefault()
+            }
+
+            /** 面板头部：排除掉里面的按钮（收起按钮） */
+            const onPanelDragStart = (event) => {
+                if (event.target && event.target.closest && event.target.closest('button')) return
+                beginDrag(event, panelRef.value)
+            }
+
+            const onBallDragStart = (event) => beginDrag(event, ballRef.value)
+
+            /** 球的点击：拖过就不展开 */
+            const onBallClick = () => {
+                if (suppressClick) return
+                setOpen(true)
             }
 
             const resetPosition = () => {
@@ -464,6 +578,30 @@ export function createDockComponent({ host, runtime, store, actions }) {
                 },
             })
 
+            /**
+             * 可折叠分组。标题栏整行可点（点一下切换折叠），折叠时只留标题，
+             * 面板因此能压到很短；展开状态存在 store 里，重启客户端保持。
+             */
+            const renderSection = (key, title, children, hint = '') => {
+                const isOpen = sections[key] !== false
+                return h('div', {
+                    class: ['plugin-laya-dock-section', isOpen ? '' : 'is-collapsed'],
+                }, [
+                    h('header', {
+                        class: 'plugin-laya-dock-section-head',
+                        title: isOpen ? '点击折叠' : '点击展开',
+                        onClick: () => toggleSection(key),
+                    }, [
+                        h('span', { class: 'plugin-laya-dock-caret' }, isOpen ? '▾' : '▸'),
+                        h('b', null, title),
+                        hint ? h('span', { class: 'plugin-laya-dock-section-hint' }, hint) : null,
+                    ]),
+                    isOpen
+                        ? h('div', { class: 'plugin-laya-dock-section-body' }, children)
+                        : null,
+                ])
+            }
+
             const renderBall = () => {
                 // 球上直接带状态：不展开面板也能看出这个会话有没有被授权分析
                 const state = !chat.value.key
@@ -474,22 +612,26 @@ export function createDockComponent({ host, runtime, store, actions }) {
                         'plugin-laya-dock-ball',
                         running.value ? 'is-running' : '',
                         armed.value ? 'is-armed' : '',
+                        dragging.value ? 'is-dragging' : '',
                     ],
-                    title: `${PLUGIN_NAME} · ${state} · 点击展开`,
-                    onClick: () => setOpen(true),
+                    ref: ballRef,
+                    style: positionStyle.value || undefined,
+                    title: `${PLUGIN_NAME} · ${state} · 点击展开 / 按住可拖动`,
+                    onMousedown: onBallDragStart,
+                    onClick: onBallClick,
                 }, [h('span', { class: 'plugin-laya-dock-ball-icon', innerHTML: DOCK_ICON })])
             }
 
             const renderPanel = () => h('div', {
                 class: ['plugin-laya-dock-panel', dragging.value ? 'is-dragging' : ''],
                 ref: panelRef,
-                style: panelStyle.value,
+                style: positionStyle.value || undefined,
             }, [
                 // —— 头部（拖动区）——
                 h('div', {
                     class: 'plugin-laya-dock-head',
-                    title: '拖动可移动，双击复位到右下角',
-                    onMousedown: onDragStart,
+                    title: '按住可拖动，双击复位到右下角',
+                    onMousedown: onPanelDragStart,
                     onDblclick: resetPosition,
                 }, [
                     h('span', { class: 'plugin-laya-dock-logo', innerHTML: DOCK_ICON }),
@@ -504,8 +646,12 @@ export function createDockComponent({ host, runtime, store, actions }) {
                     }, '–'),
                 ]),
 
-                // —— 概览 ——
-                h('div', { class: 'plugin-laya-dock-overview' }, [
+                // —— 概览（也是拖动区；里面没有可交互控件，拖它最顺手）——
+                h('div', {
+                    class: 'plugin-laya-dock-overview',
+                    title: '按住可拖动',
+                    onMousedown: (event) => beginDrag(event, panelRef.value),
+                }, [
                     h('span', { class: 'plugin-laya-dock-chip' },
                         chat.value.key ? `会话 ${chat.value.label || chat.value.key}` : '未打开会话'),
                     h('span', { class: 'plugin-laya-dock-chip' }, `模型 ${modelText.value}`),
@@ -529,8 +675,7 @@ export function createDockComponent({ host, runtime, store, actions }) {
                 message.value ? h('p', { class: 'plugin-laya-dock-msg' }, message.value) : null,
 
                 // —— 授权（核心）——
-                h('div', { class: 'plugin-laya-dock-section' }, [
-                    h('header', null, '分析授权'),
+                renderSection('authorize', '分析授权', [
                     renderSwitch(
                         chat.value.label ? `持续分析「${chat.value.label}」` : '持续分析当前会话',
                         '打开后进入该会话、收到新消息都会自动分析',
@@ -549,11 +694,10 @@ export function createDockComponent({ host, runtime, store, actions }) {
                             ? '已开启：这个会话会被持续分析，关掉开关即停止。'
                             : '未开启：插件不会读取、也不会分析这个会话的聊天记录。')
                         : '先打开一个会话，才能为它开启分析。'),
-                ]),
+                ], armed.value ? '已开启' : '未开启'),
 
                 // —— 显示 ——
-                h('div', { class: 'plugin-laya-dock-section' }, [
-                    h('header', null, '显示'),
+                renderSection('display', '显示', [
                     renderSwitch('消息标签', '在消息下方显示情绪与意图标签',
                         display.showLabels, (value) => setDisplay('showLabels', value)),
                     renderSwitch('标签细节', '在标签后附带置信度',
@@ -564,12 +708,9 @@ export function createDockComponent({ host, runtime, store, actions }) {
                         display.hideWindowButtons, (value) => setDisplay('hideWindowButtons', value)),
                 ]),
 
-                // —— 推理加速（默认折叠）——
-                h('details', { class: 'plugin-laya-dock-group' }, [
-                    h('summary', { class: 'plugin-laya-dock-group-head' },
-                        h('b', null, '推理后端与加速')),
-                    h('div', { class: 'plugin-laya-dock-group-body' }, [
-                        renderField('推理模式', h('select', {
+                // —— 推理后端与加速（默认折叠）——
+                renderSection('runtime', '推理后端与加速', [
+                    renderField('推理模式', h('select', {
                             class: 'plugin-laya-dock-select',
                             value: display.backendMode,
                             onChange: (event) => setDisplay('backendMode', event.target.value),
@@ -626,12 +767,10 @@ export function createDockComponent({ host, runtime, store, actions }) {
                                         onClick: startDownload,
                                     }, '下载本地模型（约 617 MB，从镜像站）'),
                             ],
-                    ]),
-                ]),
+                ], isApiMode.value ? 'API 模式' : '本地模型'),
 
                 // —— 导出与防卡顿 ——
-                h('div', { class: 'plugin-laya-dock-section' }, [
-                    h('header', null, '导出与防卡顿'),
+                renderSection('archive', '导出与防卡顿', [
                     h('div', { class: 'plugin-laya-dock-grid' }, [
                         h('button', {
                             class: 'ss-button plugin-laya-dock-primary',
@@ -658,8 +797,7 @@ export function createDockComponent({ host, runtime, store, actions }) {
                 ]),
 
                 // —— 入口 ——
-                h('div', { class: 'plugin-laya-dock-section' }, [
-                    h('header', null, '数据与入口'),
+                renderSection('entries', '数据与入口', [
                     h('div', { class: 'plugin-laya-dock-grid' }, [
                         h('button', { class: 'ss-button', onClick: openPortrait }, '人物画像'),
                         h('button', { class: 'ss-button', onClick: openManager }, '插件管理'),
@@ -686,6 +824,8 @@ export function createDockComponent({ host, runtime, store, actions }) {
                 syncDisplay()
                 refreshContext()
                 refreshStatus()
+                // 上次记住的位置可能已经超出当前窗口（换显示器 / 改过窗口尺寸）
+                nextTick(clampIntoView)
                 // 会话、消息列表都在 Pinia 里，用轮询读比注册多个 watch 更省事。
                 // 防卡顿：只在面板展开（或正在拖动）且页面可见时才轮询，
                 // 收成悬浮球时 stats() 的遍历就完全不发生。

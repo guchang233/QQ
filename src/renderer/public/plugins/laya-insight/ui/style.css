@@ -358,6 +358,13 @@
     transform: scale(1.06);
     box-shadow: 0 8px 24px rgba(0, 0, 0, .36);
 }
+/* 拖动中：关掉缩放过渡，否则球会跟着光标一弹一弹的 */
+.plugin-laya-dock-ball.is-dragging,
+.plugin-laya-dock-ball.is-dragging:hover {
+    cursor: grabbing;
+    transform: none;
+    transition: none;
+}
 .plugin-laya-dock-ball-icon {
     display: flex;
     width: 22px;
@@ -403,6 +410,7 @@
 .plugin-laya-dock-panel.is-dragging {
     opacity: .94;
     cursor: grabbing;
+    user-select: none;
 }
 .plugin-laya-dock-panel::-webkit-scrollbar {
     width: 6px;
@@ -469,11 +477,13 @@
     background: color-mix(in srgb, var(--color-font-2) 26%, transparent);
 }
 
-/* 概览 chip */
+/* 概览 chip（这一行也是拖动区，给 grab 光标做提示） */
 .plugin-laya-dock-overview {
     display: flex;
     flex-wrap: wrap;
     gap: 5px;
+    cursor: grab;
+    user-select: none;
 }
 .plugin-laya-dock-chip {
     padding: 2px 8px;
@@ -621,36 +631,58 @@
     color: var(--color-font-2);
 }
 
-/* 折叠组（推理加速等低频设置，用原生 <details> 免状态管理） */
-.plugin-laya-dock-group {
-    border: 1px solid color-mix(in srgb, var(--color-font-2) 16%, transparent);
-    border-radius: 10px;
-    overflow: hidden;
-}
-.plugin-laya-dock-group > summary {
-    list-style: none;
+/*
+ * 可折叠分组：整行标题栏就是开关（点哪都能折叠 / 展开）。
+ * 状态由插件自己记（store.dockGroups），不用原生 <details>——原生标签的
+ * 开合状态存在 DOM 上，面板一重建（切换会话 / 收起再展开）就丢了。
+ */
+.plugin-laya-dock-section > .plugin-laya-dock-section-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     cursor: pointer;
-    padding: 7px 10px;
-    font-size: 0.72rem;
-    color: var(--color-font-2);
-    background: color-mix(in srgb, var(--color-font-2) 6%, transparent);
     user-select: none;
+    padding: 4px 2px;
+    border-radius: 8px;
+    font-size: 0.7rem;
+    font-weight: bold;
+    letter-spacing: .4px;
+    color: var(--color-font-2);
+    transition: background .15s;
 }
-.plugin-laya-dock-group > summary::-webkit-details-marker {
-    display: none;
+.plugin-laya-dock-section > .plugin-laya-dock-section-head:hover {
+    background: color-mix(in srgb, var(--color-font-2) 10%, transparent);
 }
-.plugin-laya-dock-group > summary > b {
+.plugin-laya-dock-caret {
+    display: inline-flex;
+    width: 10px;
+    flex: 0 0 auto;
+    font-size: 0.62rem;
+    line-height: 1;
+    color: var(--color-main);
+}
+.plugin-laya-dock-section-head > b {
     font-weight: bold;
     color: var(--color-font);
 }
-.plugin-laya-dock-group[open] > summary {
-    border-bottom: 1px solid color-mix(in srgb, var(--color-font-2) 16%, transparent);
+.plugin-laya-dock-section-hint {
+    margin-left: auto;
+    padding: 1px 6px;
+    border-radius: 7px;
+    font-size: 0.6rem;
+    font-weight: normal;
+    letter-spacing: 0;
+    background: color-mix(in srgb, var(--color-main) 14%, transparent);
+    color: var(--color-main);
 }
-.plugin-laya-dock-group-body {
+.plugin-laya-dock-section-body {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    padding: 9px 10px;
+    gap: 6px;
+}
+/* 折叠态：只留标题行，面板因此能压得很短 */
+.plugin-laya-dock-section.is-collapsed {
+    gap: 0;
 }
 
 /* 字段行：标签 + 控件 */
