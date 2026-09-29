@@ -20,6 +20,7 @@ import { logLevel } from '../index.ts'
 import ScanNetwork from './scannetwork.ts'
 import { execSync } from 'child_process'
 import { regAddonIpc } from './addon-bridge.ts'
+import { regLayaIpc } from './addon-laya.ts'
 
 let connector = undefined as Connector | undefined
 const store = new Store()
@@ -683,4 +684,6 @@ export function regIpcListener() {
     // 注册第三方插件相关 IPC
     // 框架层：插件私有存储 / 通用文件能力
     regAddonIpc()
+    // 插件自带：Laya 本地模型运行时（laya-insight 插件依赖）
+    regLayaIpc()
 }

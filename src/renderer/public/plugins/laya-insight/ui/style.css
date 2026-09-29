@@ -1,0 +1,683 @@
+/*
+ * 插件样式表，由 index.js 在 activate 时抓取文本注入 <head>。
+ *
+ * 覆盖宿主提供的槽位类（.plugin-msg-deco / .plugin-chat-badge / .plugin-toolbar-btn）
+ * 以及插件自身的面板类（.plugin-laya-*）。颜色一律走客户端主题变量，
+ * 因此浅色 / 深色模式都能自适应。
+ */
+
+/* ===== 消息标签 ============================================================ */
+
+.plugin-msg-deco {
+    font-size: 0.68rem;
+    letter-spacing: 0.2px;
+}
+.plugin-msg-deco .plugin-deco-tag {
+    padding: 1px 7px;
+    border-radius: 7px;
+    background: color-mix(in srgb, var(--color-main) 14%, transparent);
+    color: var(--color-main);
+}
+.plugin-msg-deco .plugin-deco-emotion {
+    background: color-mix(in srgb, var(--color-main) 18%, transparent);
+}
+.plugin-msg-deco .plugin-deco-intent {
+    background: color-mix(in srgb, var(--color-font-2) 14%, transparent);
+    color: var(--color-font-2);
+}
+.plugin-msg-deco .plugin-deco-detail {
+    opacity: 0.55;
+    font-size: 0.62rem;
+}
+/* 自己的消息右对齐时标签跟随 */
+.message.me .plugin-msg-deco,
+.message.right .plugin-msg-deco {
+    justify-content: flex-end;
+    margin-left: 0;
+    margin-right: 12px;
+}
+
+/* ===== 顶部徽标 / 工具栏 =================================================== */
+
+.plugin-chat-badge {
+    font-weight: normal;
+}
+
+/* ===== 面板通用 ============================================================ */
+
+.plugin-laya-portrait,
+.plugin-laya-manager,
+.plugin-laya-status {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 4px 2px;
+    min-width: 340px;
+    max-height: 62vh;
+    overflow-y: auto;
+    color: var(--color-font);
+    font-size: 0.82rem;
+}
+.plugin-laya-portrait::-webkit-scrollbar,
+.plugin-laya-manager::-webkit-scrollbar {
+    width: 6px;
+}
+.plugin-laya-portrait::-webkit-scrollbar-thumb,
+.plugin-laya-manager::-webkit-scrollbar-thumb {
+    background: var(--color-font-2);
+    border-radius: 3px;
+    opacity: 0.4;
+}
+
+.plugin-laya-portrait-head {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-font-2) 22%, transparent);
+    padding-bottom: 8px;
+}
+.plugin-laya-portrait-head > span {
+    font-size: 0.68rem;
+    color: var(--color-font-2);
+}
+
+.plugin-laya-empty {
+    padding: 22px 10px;
+    text-align: center;
+    color: var(--color-font-2);
+    font-size: 0.78rem;
+}
+.plugin-laya-empty.error {
+    color: var(--color-red);
+}
+
+.plugin-laya-section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.plugin-laya-section > header {
+    font-size: 0.74rem;
+    font-weight: bold;
+    color: var(--color-font-2);
+    letter-spacing: 0.4px;
+}
+.plugin-laya-text {
+    margin: 0;
+    line-height: 1.6;
+    font-size: 0.8rem;
+}
+
+/* ===== 好感度 ============================================================== */
+
+.plugin-laya-affinity {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--color-main) 12%, transparent);
+}
+.plugin-laya-affinity-score {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+.plugin-laya-affinity-score > b {
+    font-size: 1.7rem;
+    line-height: 1;
+    color: var(--color-main);
+}
+.plugin-laya-affinity-score > span {
+    font-size: 0.76rem;
+    color: var(--color-font-2);
+}
+.plugin-laya-affinity-meta {
+    font-size: 0.66rem;
+    color: var(--color-font-2);
+    text-align: right;
+    max-width: 55%;
+}
+
+/* ===== 雷达图 ============================================================== */
+
+.plugin-laya-radar {
+    width: 100%;
+    max-width: 320px;
+    align-self: center;
+}
+
+/* ===== 标签群 ============================================================== */
+
+.plugin-laya-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+.plugin-laya-tags > .plugin-deco-tag {
+    padding: 2px 8px;
+    border-radius: 8px;
+    font-size: 0.72rem;
+    background: color-mix(in srgb, var(--color-main) 14%, transparent);
+    color: var(--color-main);
+}
+.plugin-laya-tags > .plugin-deco-intent {
+    background: color-mix(in srgb, var(--color-font-2) 14%, transparent);
+    color: var(--color-font-2);
+}
+
+/* ===== MBTI ================================================================ */
+
+.plugin-laya-mbti {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.plugin-laya-mbti-code {
+    font-size: 1.4rem;
+    font-weight: bold;
+    letter-spacing: 4px;
+    color: var(--color-main);
+}
+.plugin-laya-mbti-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 5px 10px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--color-font-2) 8%, transparent);
+    font-size: 0.76rem;
+}
+.plugin-laya-mbti-row > span {
+    color: var(--color-font-2);
+    min-width: 62px;
+}
+.plugin-laya-mbti-row > i {
+    font-style: normal;
+    font-size: 0.66rem;
+    color: var(--color-font-2);
+}
+
+/* ===== 分析详情 ============================================================ */
+
+.plugin-laya-detail {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    font-size: 0.72rem;
+    color: var(--color-font-2);
+}
+
+/* ===== 群聊页签 / 成员 ===================================================== */
+
+.plugin-laya-tabs {
+    display: flex;
+    gap: 6px;
+}
+.plugin-laya-tabs > button,
+.plugin-laya-members > button,
+.plugin-laya-pager > button {
+    border: none;
+    cursor: pointer;
+    font-size: 0.74rem;
+    padding: 4px 12px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--color-font-2) 12%, transparent);
+    color: var(--color-font-2);
+    font-family: inherit;
+    transition: background .2s, color .2s;
+}
+.plugin-laya-tabs > button.active,
+.plugin-laya-members > button.active {
+    background: color-mix(in srgb, var(--color-main) 20%, transparent);
+    color: var(--color-main);
+}
+.plugin-laya-members {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    align-items: center;
+}
+.plugin-laya-pager {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.7rem;
+    color: var(--color-font-2);
+}
+.plugin-laya-pager > button[disabled] {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* ===== 操作区 ============================================================== */
+
+.plugin-laya-actions {
+    display: flex;
+    gap: 8px;
+    padding-top: 6px;
+    border-top: 1px solid color-mix(in srgb, var(--color-font-2) 18%, transparent);
+}
+
+/* ===== 插件管理 ============================================================ */
+
+.plugin-laya-hint {
+    margin: 0;
+    font-size: 0.7rem;
+    color: var(--color-font-2);
+}
+.plugin-laya-plugin-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--color-font-2) 8%, transparent);
+}
+.plugin-laya-plugin-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.plugin-laya-plugin-meta > span {
+    font-size: 0.68rem;
+    color: var(--color-font-2);
+}
+.plugin-laya-plugin-desc {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.plugin-laya-switch {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.72rem;
+    color: var(--color-font-2);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+/* ===== 模型状态 ============================================================ */
+
+.plugin-laya-status > p {
+    margin: 0;
+    line-height: 1.7;
+    font-size: 0.78rem;
+    word-break: break-all;
+}
+
+/* ===== 悬浮窗（Dock）======================================================= */
+
+/*
+ * 挂载容器是 body 下的独立节点，用 fixed + 零尺寸 + pointer-events:none
+ * 把它从文档流里摘出去，保证不参与客户端的布局，也不挡点击。
+ */
+.plugin-laya-dock-mount {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 0;
+    height: 0;
+    z-index: 2147483000;
+    pointer-events: none;
+}
+
+.plugin-laya-dock {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483000;
+    pointer-events: none;
+    font-size: 0.78rem;
+    color: var(--color-font);
+}
+
+/* 折叠态：悬浮球 */
+.plugin-laya-dock-ball {
+    position: fixed;
+    right: 22px;
+    bottom: 22px;
+    width: 46px;
+    height: 46px;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: color-mix(in srgb, var(--color-main) 88%, #000);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .28);
+    transition: transform .18s, box-shadow .18s;
+}
+.plugin-laya-dock-ball:hover {
+    transform: scale(1.06);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .36);
+}
+.plugin-laya-dock-ball-icon {
+    display: flex;
+    width: 22px;
+    height: 22px;
+}
+.plugin-laya-dock-ball-icon > svg {
+    width: 100%;
+    height: 100%;
+    fill: #fff;
+}
+/* 已为当前会话开启分析：球外一圈高亮环，不展开面板也能看到状态 */
+.plugin-laya-dock-ball.is-armed {
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .28),
+        0 0 0 3px color-mix(in srgb, var(--color-main) 45%, transparent);
+}
+.plugin-laya-dock-ball.is-running {
+    animation: plugin-laya-dock-pulse 1.4s ease-in-out infinite;
+}
+@keyframes plugin-laya-dock-pulse {
+    0%, 100% { box-shadow: 0 6px 20px rgba(0, 0, 0, .28), 0 0 0 0 color-mix(in srgb, var(--color-main) 60%, transparent); }
+    50% { box-shadow: 0 6px 20px rgba(0, 0, 0, .28), 0 0 0 10px transparent; }
+}
+
+/* 展开态：面板 */
+.plugin-laya-dock-panel {
+    position: fixed;
+    right: 22px;
+    bottom: 22px;
+    width: 322px;
+    max-height: min(74vh, 640px);
+    overflow-y: auto;
+    pointer-events: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 10px 12px 12px;
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--color-card, var(--color-font)) 8%, #1c1c1e);
+    border: 1px solid color-mix(in srgb, var(--color-font-2) 26%, transparent);
+    box-shadow: 0 12px 36px rgba(0, 0, 0, .42);
+    backdrop-filter: blur(6px);
+}
+.plugin-laya-dock-panel.is-dragging {
+    opacity: .94;
+    cursor: grabbing;
+}
+.plugin-laya-dock-panel::-webkit-scrollbar {
+    width: 6px;
+}
+.plugin-laya-dock-panel::-webkit-scrollbar-thumb {
+    background: var(--color-font-2);
+    border-radius: 3px;
+}
+
+/* 头部（拖动区） */
+.plugin-laya-dock-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: grab;
+    user-select: none;
+    padding-bottom: 8px;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-font-2) 22%, transparent);
+}
+.plugin-laya-dock-panel.is-dragging .plugin-laya-dock-head {
+    cursor: grabbing;
+}
+.plugin-laya-dock-logo {
+    display: flex;
+    width: 18px;
+    height: 18px;
+    flex: 0 0 auto;
+}
+.plugin-laya-dock-logo > svg {
+    width: 100%;
+    height: 100%;
+    fill: var(--color-main);
+}
+.plugin-laya-dock-head-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+}
+.plugin-laya-dock-head-text > b {
+    font-size: 0.82rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.plugin-laya-dock-head-text > span {
+    font-size: 0.62rem;
+    color: var(--color-font-2);
+}
+.plugin-laya-dock-icon-btn {
+    border: none;
+    cursor: pointer;
+    width: 22px;
+    height: 22px;
+    border-radius: 7px;
+    flex: 0 0 auto;
+    line-height: 1;
+    font-size: 0.9rem;
+    background: color-mix(in srgb, var(--color-font-2) 14%, transparent);
+    color: var(--color-font-2);
+    font-family: inherit;
+}
+.plugin-laya-dock-icon-btn:hover {
+    background: color-mix(in srgb, var(--color-font-2) 26%, transparent);
+}
+
+/* 概览 chip */
+.plugin-laya-dock-overview {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+.plugin-laya-dock-chip {
+    padding: 2px 8px;
+    border-radius: 8px;
+    font-size: 0.66rem;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    background: color-mix(in srgb, var(--color-main) 14%, transparent);
+    color: var(--color-main);
+}
+
+/* 分析控制 */
+.plugin-laya-dock-control {
+    display: flex;
+    gap: 8px;
+}
+.plugin-laya-dock-control > button {
+    flex: 1;
+    cursor: pointer;
+}
+.plugin-laya-dock-control > button[disabled] {
+    opacity: .45;
+    cursor: not-allowed;
+}
+.plugin-laya-dock-primary {
+    background: color-mix(in srgb, var(--color-main) 82%, #000) !important;
+    color: #fff !important;
+}
+.plugin-laya-dock-danger {
+    color: var(--color-red) !important;
+}
+
+/* 进行中进度条（不定长） */
+.plugin-laya-dock-bar {
+    position: relative;
+    height: 3px;
+    border-radius: 3px;
+    overflow: hidden;
+    background: color-mix(in srgb, var(--color-font-2) 20%, transparent);
+}
+.plugin-laya-dock-bar > i {
+    position: absolute;
+    top: 0;
+    left: -40%;
+    width: 40%;
+    height: 100%;
+    border-radius: 3px;
+    background: var(--color-main);
+    animation: plugin-laya-dock-slide 1.1s ease-in-out infinite;
+}
+@keyframes plugin-laya-dock-slide {
+    0% { left: -40%; }
+    100% { left: 100%; }
+}
+
+.plugin-laya-dock-msg {
+    margin: 0;
+    font-size: 0.7rem;
+    line-height: 1.5;
+    color: var(--color-font-2);
+    word-break: break-all;
+}
+
+/* 分组 */
+.plugin-laya-dock-section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.plugin-laya-dock-section > header {
+    font-size: 0.7rem;
+    font-weight: bold;
+    letter-spacing: .4px;
+    color: var(--color-font-2);
+}
+
+/* 开关行 */
+.plugin-laya-dock-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 6px 9px;
+    border-radius: 9px;
+    cursor: pointer;
+    background: color-mix(in srgb, var(--color-font-2) 8%, transparent);
+}
+.plugin-laya-dock-row.is-disabled {
+    cursor: not-allowed;
+    opacity: .5;
+}
+.plugin-laya-dock-row-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+}
+.plugin-laya-dock-row-meta > b {
+    font-size: 0.75rem;
+    font-weight: normal;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.plugin-laya-dock-row-meta > span {
+    font-size: 0.62rem;
+    line-height: 1.4;
+    color: var(--color-font-2);
+}
+.plugin-laya-dock-check {
+    flex: 0 0 auto;
+    width: 15px;
+    height: 15px;
+    cursor: inherit;
+    accent-color: var(--color-main);
+}
+
+.plugin-laya-dock-note {
+    margin: 0;
+    font-size: 0.64rem;
+    line-height: 1.55;
+    color: var(--color-font-2);
+}
+
+/* 入口按钮栅格 */
+.plugin-laya-dock-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+}
+.plugin-laya-dock-grid > button {
+    cursor: pointer;
+    font-size: 0.72rem;
+    padding: 6px 4px;
+}
+
+.plugin-laya-dock-foot {
+    margin: 0;
+    padding-top: 6px;
+    border-top: 1px solid color-mix(in srgb, var(--color-font-2) 18%, transparent);
+    font-size: 0.6rem;
+    line-height: 1.5;
+    color: var(--color-font-2);
+}
+
+/* 折叠组（推理加速等低频设置，用原生 <details> 免状态管理） */
+.plugin-laya-dock-group {
+    border: 1px solid color-mix(in srgb, var(--color-font-2) 16%, transparent);
+    border-radius: 10px;
+    overflow: hidden;
+}
+.plugin-laya-dock-group > summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 7px 10px;
+    font-size: 0.72rem;
+    color: var(--color-font-2);
+    background: color-mix(in srgb, var(--color-font-2) 6%, transparent);
+    user-select: none;
+}
+.plugin-laya-dock-group > summary::-webkit-details-marker {
+    display: none;
+}
+.plugin-laya-dock-group > summary > b {
+    font-weight: bold;
+    color: var(--color-font);
+}
+.plugin-laya-dock-group[open] > summary {
+    border-bottom: 1px solid color-mix(in srgb, var(--color-font-2) 16%, transparent);
+}
+.plugin-laya-dock-group-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 9px 10px;
+}
+
+/* 字段行：标签 + 控件 */
+.plugin-laya-dock-field {
+    display: grid;
+    grid-template-columns: 64px 1fr;
+    align-items: center;
+    gap: 8px;
+}
+.plugin-laya-dock-field > label {
+    font-size: 0.7rem;
+    color: var(--color-font-2);
+}
+.plugin-laya-dock-select,
+.plugin-laya-dock-num {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 4px 8px;
+    font-size: 0.72rem;
+    font-family: inherit;
+    color: var(--color-font);
+    background: color-mix(in srgb, var(--color-font-2) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-font-2) 20%, transparent);
+    border-radius: 7px;
+    outline: none;
+}
+.plugin-laya-dock-select:focus,
+.plugin-laya-dock-num:focus {
+    border-color: var(--color-main);
+}
