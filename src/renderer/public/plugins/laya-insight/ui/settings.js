@@ -13,6 +13,20 @@
 
 import { CARD_ID, PLUGIN_ID, PLUGIN_NAME, PLUGIN_VERSION } from './constants.js'
 
+/**
+ * 设置页的分组。注册顺序就是显示顺序：先注册一个分组标题，后面注册的项
+ * 就归进这一组（宿主「附加」页支持 type='group'，见 OptAddon.vue）。
+ *
+ * `open` 是首次进入时的默认状态：常用的展开，后端 / 数据这类低频的收起，
+ * 免得一进设置页就看到十几项。
+ */
+const GROUPS = [
+    { id: 'display', title: '显示与标签', description: '标签、徽标与窗口外观', icon: 'tags', open: true },
+    { id: 'runtime', title: '推理后端', description: '本地 ONNX 模型 / 远程 API', icon: 'server', open: false },
+    { id: 'data', title: '数据与导出', description: '分析结果归档到本地', icon: 'database', open: false },
+    { id: 'entries', title: '入口与维护', description: '面板入口与数据清理', icon: 'door-open', open: true },
+]
+
 /** 设置项 ↔ option 键 映射 */
 const KEYS = {
     showLabels: 'plugin_laya_show_labels',
@@ -51,6 +65,36 @@ export function registerSettings({ host, runtime, store, pipeline, openPortrait,
         if (current === undefined) host.option.set(optionKey, saved[name] ?? '')
     })
 
+    /**
+     * 注册一个可折叠分组。
+     *
+     * 折叠状态同时写两份：客户端 option（界面即时生效）+ 插件私有存储。
+     * 后者是给「生产构建会清掉未登记的客户端配置键」兜底的——那份没了以后，
+     * defaultValue 还能从插件存储里取回上次的状态。
+     */
+    const registerGroup = (id) => {
+        const meta = GROUPS.find((item) => item.id === id)
+        if (!meta) return
+        const optionKey = `plugin_laya_group_${id}`
+        const savedGroups = store.getSettings().optionGroups || {}
+        host.option.registerItem(CARD_ID, {
+            id: `${CARD_ID}-group-${id}`,
+            label: meta.title,
+            description: meta.description,
+            type: 'group',
+            icon: ['fas', meta.icon],
+            optionKey,
+            defaultValue: savedGroups[id] !== undefined
+                ? savedGroups[id] === true
+                : !meta.open,
+            callback: (value) => {
+                const groups = { ...(store.getSettings().optionGroups || {}) }
+                groups[id] = value === true
+                store.saveSettings({ optionGroups: groups })
+            },
+        })
+    }
+
     /** 布尔开关的统一注册 */
     const registerSwitch = (name, label, description, icon) => {
         host.option.registerItem(CARD_ID, {
@@ -68,13 +112,13 @@ export function registerSettings({ host, runtime, store, pipeline, openPortrait,
         })
     }
 
+    registerGroup('display')
     registerSwitch('showLabels', '消息标签', '在消息下方显示情绪与意图标签', 'tags')
     registerSwitch('showDetail', '标签细节', '在标签后附带置信度', 'circle-info')
     registerSwitch('showBadge', '会话情绪徽标', '在聊天页顶部显示当前会话的整体情绪', 'heart')
     registerSwitch('hideWindowButtons', '隐藏窗口按钮',
         '隐藏客户端标题栏自绘的最小化 / 关闭按钮（关掉立即恢复）', 'window-minimize')
-    registerSwitch('archiveClearAfterExport', '导出后清空记录',
-        '把分析结果导出到本地后清掉插件内的记录，防止越用越卡；聊天记录本身不受影响', 'eraser')
+    // 「导出后清空记录」归到「数据与导出」组，见下面 registerGroup('data') 处
 
     // 模型目录（本地模式）
     host.option.registerItem(CARD_ID, {
@@ -97,6 +141,7 @@ export function registerSettings({ host, runtime, store, pipeline, openPortrait,
 
     //#region == 推理后端（本地 / API） =========================================
 
+    registerGroup('runtime')
     host.option.registerItem(CARD_ID, {
         id: `${CARD_ID}-api-switch`,
         label: '使用 API 推理',
@@ -157,22 +202,9 @@ export function registerSettings({ host, runtime, store, pipeline, openPortrait,
         },
     })
 
-    //#endregion
-
-    //#region == 按钮项 ========================================================
-
-    host.option.registerItem(CARD_ID, {
-        id: `${CARD_ID}-dock`,
-        label: '显示悬浮窗',
-        description: '插件内容管理中心，分析也在这里手动开启',
-        type: 'button',
-        icon: ['fas', 'table-columns'],
-        callback: () => openDock(),
-    })
-
     host.option.registerItem(CARD_ID, {
         id: `${CARD_ID}-pick`,
-        label: '选择目录',
+        label: '选择模型目录',
         type: 'button',
         icon: ['fas', 'folder-open'],
         callback: async () => {
@@ -189,6 +221,15 @@ export function registerSettings({ host, runtime, store, pipeline, openPortrait,
             }
         },
     })
+
+    //#endregion
+
+    //#region == 按钮项 ========================================================
+
+    // —— 数据与导出 ——
+    registerGroup('data')
+    registerSwitch('archiveClearAfterExport', '导出后清空记录',
+        '把分析结果导出到本地后清掉插件内的记录，防止越用越卡；聊天记录本身不受影响', 'eraser')
 
     host.option.registerItem(CARD_ID, {
         id: `${CARD_ID}-export`,
@@ -238,6 +279,17 @@ export function registerSettings({ host, runtime, store, pipeline, openPortrait,
             Promise.resolve(openArchiveDir())
                 .catch((e) => host.log.error('打开导出目录失败', e))
         },
+    })
+
+    // —— 入口与维护 ——
+    registerGroup('entries')
+    host.option.registerItem(CARD_ID, {
+        id: `${CARD_ID}-dock`,
+        label: '显示悬浮窗',
+        description: '插件内容管理中心，分析也在这里手动开启',
+        type: 'button',
+        icon: ['fas', 'table-columns'],
+        callback: () => openDock(),
     })
 
     host.option.registerItem(CARD_ID, {

@@ -1,7 +1,7 @@
 {
     "id": "workbuddy.laya-insight",
     "name": "Laya 意图与情绪感知",
-    "version": "1.5.0",
+    "version": "1.6.0",
     "description": "为聊天消息提供情绪 / 意图标签与人物画像分析；支持本地 Laya ONNX 模型（内置下载器）或 OpenAI 兼容 API 推理。默认不读取聊天记录，分析需在悬浮窗中手动开启。",
     "author": "WorkBuddy",
     "entry": "index.js",

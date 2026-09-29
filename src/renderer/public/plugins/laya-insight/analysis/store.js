@@ -72,6 +72,17 @@ export const DEFAULT_SETTINGS = {
      * 只记用户主动改过的分组，没记的按默认值（见 ui/dock.js 的 DOCK_SECTIONS）。
      */
     dockGroups: {},
+    /**
+     * 「设置 → 附加」里各分组的折叠状态（分组 id -> true 折叠）。
+     * 界面上那份存在客户端配置里，这里再存一份兜底：客户端生产构建会清掉未登记的
+     * 配置键，那份没了以后 defaultValue 还能从这里取回上次的状态。
+     */
+    optionGroups: {},
+    /**
+     * 悬浮窗面板尺寸 { width, height }；null 表示用自适应默认值。
+     * 用户可以拖右下角调整，小屏 / 大屏都能自己调到合适。
+     */
+    dockSize: null,
 
     // —— 归档（体积控制） ——
     /** 归档导出目录；留空则用主进程的默认目录（<userData>/laya-insight-archive） */
@@ -212,6 +223,14 @@ export class PluginStore {
             const pos = patch.pos
             next.dockPos = pos && Number.isFinite(pos.x) && Number.isFinite(pos.y)
                 ? { x: pos.x, y: pos.y }
+                : null
+        }
+        // null = 复位成自适应尺寸
+        if (patch.size !== undefined) {
+            const size = patch.size
+            const valid = size && Number.isFinite(size.width) && Number.isFinite(size.height)
+            next.dockSize = valid
+                ? { width: Math.round(size.width), height: Math.round(size.height) }
                 : null
         }
         // 分组状态是「合并」语义：一次只改一个分组，不能把别的分组抹掉

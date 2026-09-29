@@ -7,7 +7,7 @@ export const PLUGIN_ID = 'workbuddy.laya-insight'
 /** 显示名 */
 export const PLUGIN_NAME = 'Laya 意图与情绪感知'
 /** 插件版本 */
-export const PLUGIN_VERSION = '1.5.0'
+export const PLUGIN_VERSION = '1.6.0'
 
 /** 「设置 → 附加」里的卡片 ID */
 export const CARD_ID = 'plugin-laya'

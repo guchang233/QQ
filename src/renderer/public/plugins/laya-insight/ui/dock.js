@@ -35,6 +35,14 @@ const EDGE_GAP = 8
 /** 拖动判定阈值：位移小于它算点击，避免「点一下球却拖不动 / 拖一下却展开了」 */
 const DRAG_THRESHOLD = 4
 
+/** 悬浮球直径（与 style.css 的 .plugin-laya-dock-ball 保持一致） */
+const BALL_SIZE = 46
+/** 面板默认尺寸；实际渲染受 CSS 的 max()/min() 约束，这里只用作首帧估算 */
+const PANEL_DEFAULT = { width: 322, height: 480 }
+/** 面板可调范围 */
+const PANEL_MIN = { width: 240, height: 220 }
+const PANEL_MAX = { width: 560, height: 900 }
+
 /**
  * 设置分组。每一组都能折叠 / 展开，状态按 key 存在 store.dockGroups 里。
  * `open` 是首次使用（或该组没被用户动过）时的默认状态：
@@ -171,6 +179,14 @@ export function createDockComponent({ host, runtime, store, actions }) {
                 return `下载中（${download.filesDone + 1}/${download.filesTotal}）${download.file}${filePart}`
             })
 
+            /** 面板尺寸：用户拖右下角调过就存起来，没调过用自适应默认值 */
+            const dockSize = reactive({
+                width: store.getSettings().dockSize?.width || 0,
+                height: store.getSettings().dockSize?.height || 0,
+            })
+            /** 面板实测尺寸（渲染后量一次，用于把面板锚定到球上） */
+            const panelSize = ref(null)
+
             /**
              * 位置样式：球与面板共用同一份坐标。
              * 没拖过时返回 null（保留 CSS 里的「右下角」默认定位），拖过之后
@@ -184,6 +200,39 @@ export function createDockComponent({ host, runtime, store, actions }) {
                     right: 'auto',
                     bottom: 'auto',
                 }
+            })
+
+            /**
+             * 面板自己的位置：以悬浮球为锚，向左上展开。
+             *
+             * 关键点：`pos` 永远是**球**的位置，展开面板时不去改它
+             * （以前是「共用左上角 + 展开时夹紧」，结果把球拖到右边再展开，
+             * 球会被一起推到左边——开关前后按钮位置就变了）。现在面板只是
+             * 临时算一个不越界的位置，收起后球还在原地。
+             */
+            const panelAnchor = computed(() => {
+                if (!pos.value) return null
+                const size = panelSize.value || {
+                    width: dockSize.width || PANEL_DEFAULT.width,
+                    height: dockSize.height || PANEL_DEFAULT.height,
+                }
+                const viewport = { width: window.innerWidth, height: window.innerHeight }
+                // 面板右下角贴住球的右下角，空间不够时由 clamp 顶回视口内
+                return clampDockPosition(
+                    pos.value.x + BALL_SIZE - size.width,
+                    pos.value.y + BALL_SIZE - size.height,
+                    size.width,
+                    size.height,
+                    viewport,
+                )
+            })
+
+            /** 面板尺寸样式：调过宽高才下发，否则交给 CSS 自适应 */
+            const panelSizeStyle = computed(() => {
+                const style = {}
+                if (dockSize.width > 0) style.width = `${dockSize.width}px`
+                if (dockSize.height > 0) style.maxHeight = `${dockSize.height}px`
+                return style
             })
 
             //#region == 状态同步 ---------------------------------------------------
@@ -232,21 +281,26 @@ export function createDockComponent({ host, runtime, store, actions }) {
             //#region == 操作 -------------------------------------------------------
 
             /**
-             * 把当前位置按「现在这个元素」的尺寸重新夹一次。
-             * 球是 46px、面板是 322px，共享同一套坐标；如果球被拖到很靠右，
-             * 直接展开面板就会有一大截跑到视口外面，所以每次切换形态都夹一遍。
+             * 把球的位置夹回视口内。窗口尺寸变了（换显示器 / 缩放窗口）或者
+             * 上次记住的位置已经越界时用它，保证悬浮球永远找得回来。
+             * 只动球的位置，面板位置由 panelAnchor 自己算。
              */
             const clampIntoView = () => {
-                const el = open.value ? panelRef.value : ballRef.value
-                if (!el || !pos.value) return
-                const rect = el.getBoundingClientRect()
+                if (!pos.value) return
                 const next = clampDockPosition(pos.value.x, pos.value.y,
-                    rect.width, rect.height,
+                    BALL_SIZE, BALL_SIZE,
                     { width: window.innerWidth, height: window.innerHeight })
                 if (next.x !== pos.value.x || next.y !== pos.value.y) {
                     pos.value = next
                     store.saveDockState({ pos: next })
                 }
+            }
+
+            /** 量一次面板尺寸，供 panelAnchor 把面板摆到球旁边 */
+            const measurePanel = () => {
+                const rect = panelRef.value?.getBoundingClientRect()
+                if (!rect || !rect.width) return
+                panelSize.value = { width: rect.width, height: rect.height }
             }
 
             const setOpen = (value) => {
@@ -255,10 +309,10 @@ export function createDockComponent({ host, runtime, store, actions }) {
                 if (value) {
                     refreshContext()
                     refreshStatus()
-                    // 等面板真的渲出来再量尺寸，否则量到的是球
-                    nextTick(clampIntoView)
+                    // 等面板真的渲出来再量尺寸，锚点才算得准
+                    nextTick(measurePanel)
                 } else {
-                    clampIntoView()
+                    panelSize.value = null
                 }
             }
 
@@ -475,11 +529,19 @@ export function createDockComponent({ host, runtime, store, actions }) {
                 drag.moved = true
                 dragging.value = true
                 const rect = drag.rect
+                // 拖的是面板就反推球的位置：保持「面板右下角 = 球右下角」的关系，
+                // 这样松手后收起面板，球就停在面板右下角那个点上，不会跳位。
+                const anchorLeft = drag.kind === 'panel'
+                    ? drag.left + dx + rect.width - BALL_SIZE
+                    : drag.left + dx
+                const anchorTop = drag.kind === 'panel'
+                    ? drag.top + dy + rect.height - BALL_SIZE
+                    : drag.top + dy
                 pos.value = clampDockPosition(
-                    drag.left + dx,
-                    drag.top + dy,
-                    rect.width,
-                    rect.height,
+                    anchorLeft,
+                    anchorTop,
+                    BALL_SIZE,
+                    BALL_SIZE,
                     { width: window.innerWidth, height: window.innerHeight },
                 )
             }
@@ -501,9 +563,9 @@ export function createDockComponent({ host, runtime, store, actions }) {
              * @param {MouseEvent} event
              * @param {HTMLElement|null} el 被拖动的元素（球 / 面板）
              */
-            const beginDrag = (event, el) => {
+            const beginDrag = (event, el, kind = 'panel') => {
                 if (event.button !== 0) return
-                const node = el || panelRef.value || ballRef.value
+                const node = el || (kind === 'ball' ? ballRef.value : panelRef.value)
                 const rect = node?.getBoundingClientRect()
                 if (!rect) return
                 drag = {
@@ -512,6 +574,7 @@ export function createDockComponent({ host, runtime, store, actions }) {
                     left: rect.left,
                     top: rect.top,
                     rect,
+                    kind,
                     moved: false,
                 }
                 window.addEventListener('mousemove', onDragMove)
@@ -522,10 +585,59 @@ export function createDockComponent({ host, runtime, store, actions }) {
             /** 面板头部：排除掉里面的按钮（收起按钮） */
             const onPanelDragStart = (event) => {
                 if (event.target && event.target.closest && event.target.closest('button')) return
-                beginDrag(event, panelRef.value)
+                beginDrag(event, panelRef.value, 'panel')
             }
 
-            const onBallDragStart = (event) => beginDrag(event, ballRef.value)
+            const onBallDragStart = (event) => beginDrag(event, ballRef.value, 'ball')
+
+            //#region == 调整面板大小 ---------------------------------------------
+
+            /**
+             * 右下角手柄：拖动改变面板尺寸，双击复位成自适应。
+             * 窗口小 / 大、想看更多内容都能自己调，尺寸记在插件存储里。
+             */
+            let resizing = null
+
+            const onResizeMove = (event) => {
+                if (!resizing || !panelSize.value) return
+                const width = Math.min(PANEL_MAX.width,
+                    Math.max(PANEL_MIN.width, resizing.width + (event.clientX - resizing.x)))
+                const height = Math.min(PANEL_MAX.height,
+                    Math.max(PANEL_MIN.height, resizing.height + (event.clientY - resizing.y)))
+                dockSize.width = Math.round(width)
+                dockSize.height = Math.round(height)
+            }
+
+            const onResizeEnd = () => {
+                if (resizing && (dockSize.width > 0 || dockSize.height > 0)) {
+                    store.saveDockState({
+                        size: { width: dockSize.width, height: dockSize.height },
+                    })
+                }
+                resizing = null
+                window.removeEventListener('mousemove', onResizeMove)
+                window.removeEventListener('mouseup', onResizeEnd)
+            }
+
+            const onResizeStart = (event) => {
+                if (event.button !== 0) return
+                const rect = panelRef.value?.getBoundingClientRect()
+                if (!rect) return
+                resizing = { x: event.clientX, y: event.clientY, width: rect.width, height: rect.height }
+                panelSize.value = { width: rect.width, height: rect.height }
+                window.addEventListener('mousemove', onResizeMove)
+                window.addEventListener('mouseup', onResizeEnd)
+                event.preventDefault()
+                event.stopPropagation()
+            }
+
+            const resetSize = () => {
+                dockSize.width = 0
+                dockSize.height = 0
+                store.saveDockState({ size: null })
+            }
+
+            //#endregion
 
             /** 球的点击：拖过就不展开 */
             const onBallClick = () => {
@@ -622,12 +734,17 @@ export function createDockComponent({ host, runtime, store, actions }) {
                 }, [h('span', { class: 'plugin-laya-dock-ball-icon', innerHTML: DOCK_ICON })])
             }
 
-            const renderPanel = () => h('div', {
-                class: ['plugin-laya-dock-panel', dragging.value ? 'is-dragging' : ''],
-                ref: panelRef,
-                style: positionStyle.value || undefined,
-            }, [
-                // —— 头部（拖动区）——
+            const renderPanel = () => {
+                const anchor = panelAnchor.value || positionStyle.value || null
+                return h('div', {
+                    class: ['plugin-laya-dock-panel', dragging.value ? 'is-dragging' : ''],
+                    ref: panelRef,
+                    style: {
+                        ...(anchor || {}),
+                        ...panelSizeStyle.value,
+                    },
+                }, [
+                // —— 头部（拖动区；放在滚动层外面，滚到哪儿都能抓着拖）——
                 h('div', {
                     class: 'plugin-laya-dock-head',
                     title: '按住可拖动，双击复位到右下角',
@@ -658,127 +775,130 @@ export function createDockComponent({ host, runtime, store, actions }) {
                     h('span', { class: 'plugin-laya-dock-chip' }, `已分析 ${stats.value.messages} 条`),
                 ]),
 
-                // —— 分析控制 ——
-                h('div', { class: 'plugin-laya-dock-control' }, [
-                    h('button', {
-                        class: 'ss-button plugin-laya-dock-primary',
-                        disabled: running.value || !chat.value.key,
-                        onClick: analyzeNow,
-                    }, running.value ? `分析中（${phase.value || '…'}）` : '分析当前会话'),
-                    h('button', {
-                        class: 'ss-button',
-                        disabled: !pipelineRunning.value,
-                        onClick: stopAnalyze,
-                    }, '停止'),
-                ]),
-                running.value ? h('div', { class: 'plugin-laya-dock-bar' }, [h('i')]) : null,
-                message.value ? h('p', { class: 'plugin-laya-dock-msg' }, message.value) : null,
+                // —— 内容层：唯一会滚动的部分 ——
+                h('div', { class: 'plugin-laya-dock-body' }, [
 
-                // —— 授权（核心）——
-                renderSection('authorize', '分析授权', [
-                    renderSwitch(
-                        chat.value.label ? `持续分析「${chat.value.label}」` : '持续分析当前会话',
-                        '打开后进入该会话、收到新消息都会自动分析',
-                        armed.value,
-                        toggleArmed,
-                        !chat.value.key,
-                    ),
-                    renderSwitch(
-                        '跟随新消息',
-                        '已开启分析的会话里，新消息到达时继续分析',
-                        display.followNewMessages,
-                        (value) => setDisplay('followNewMessages', value),
-                    ),
-                    h('p', { class: 'plugin-laya-dock-note' }, chat.value.key
-                        ? (armed.value
-                            ? '已开启：这个会话会被持续分析，关掉开关即停止。'
-                            : '未开启：插件不会读取、也不会分析这个会话的聊天记录。')
-                        : '先打开一个会话，才能为它开启分析。'),
-                ], armed.value ? '已开启' : '未开启'),
-
-                // —— 显示 ——
-                renderSection('display', '显示', [
-                    renderSwitch('消息标签', '在消息下方显示情绪与意图标签',
-                        display.showLabels, (value) => setDisplay('showLabels', value)),
-                    renderSwitch('标签细节', '在标签后附带置信度',
-                        display.showDetail, (value) => setDisplay('showDetail', value)),
-                    renderSwitch('会话情绪徽标', '在聊天页顶部显示当前会话的整体情绪',
-                        display.showBadge, (value) => setDisplay('showBadge', value)),
-                    renderSwitch('隐藏窗口按钮', '隐藏标题栏的最小化 / 关闭按钮（可随时关回来）',
-                        display.hideWindowButtons, (value) => setDisplay('hideWindowButtons', value)),
-                ]),
-
-                // —— 推理后端与加速（默认折叠）——
-                renderSection('runtime', '推理后端与加速', [
-                    renderField('推理模式', h('select', {
-                            class: 'plugin-laya-dock-select',
-                            value: display.backendMode,
-                            onChange: (event) => setDisplay('backendMode', event.target.value),
-                        }, [
-                            h('option', { value: 'local' }, '本地模型（ONNX）'),
-                            h('option', { value: 'api' }, 'API 接口'),
-                        ])),
-                        isApiMode.value
-                            ? h('p', { class: 'plugin-laya-dock-note' },
-                                'API 模式：在「设置 → 附加」里填写接口地址 / 模型名 / 密钥，重新加载界面后生效。')
-                            : [
-                                renderField('提供者', h('select', {
-                                    class: 'plugin-laya-dock-select',
-                                    value: perf.provider,
-                                    onChange: (event) => { perf.provider = event.target.value },
-                                }, PROVIDER_OPTIONS.map((opt) => h('option', {
-                                    value: opt.value,
-                                    selected: perf.provider === opt.value,
-                                }, opt.label)))),
-                                renderField('线程', renderNumberInput(
-                                    perf.threads, 1, 16, (value) => { perf.threads = value })),
-                                renderField('批大小', renderNumberInput(
-                                    perf.batchSize, 1, 32, (value) => { perf.batchSize = value })),
-                                renderField('执行模式', h('select', {
-                                    class: 'plugin-laya-dock-select',
-                                    value: perf.executionMode,
-                                    onChange: (event) => { perf.executionMode = event.target.value },
-                                }, [
-                                    h('option', { value: 'sequential' }, '串行（稳定延迟）'),
-                                    h('option', { value: 'parallel' }, '并行（单批吞吐）'),
-                                ])),
-                                h('div', { class: 'plugin-laya-dock-grid' }, [
-                                    h('button', {
-                                        class: 'ss-button plugin-laya-dock-primary',
-                                        disabled: perfBusy.value,
-                                        onClick: applyPerf,
-                                    }, perfBusy.value ? '应用中…' : '应用设置'),
-                                    h('button', {
-                                        class: 'ss-button',
-                                        disabled: perfBusy.value || status.value?.available === false,
-                                        onClick: prewarmModel,
-                                    }, '装载 / 预热'),
-                                ]),
-                                h('p', { class: 'plugin-laya-dock-note' },
-                                    `本机可用：${(status.value?.availableProviders || ['cpu']).join('、')}；` +
-                                    `当前尝试顺序：${(status.value?.providerHint || [perf.provider]).join(' → ')}`),
-                                h('p', { class: 'plugin-laya-dock-note' },
-                                    'GPU（DirectML）首次装载需要编译着色器，可能停十几秒，属正常现象；' +
-                                    '装载失败会自动退回 CPU，点「装载 / 预热」可以提前看到结果。'),
-                                downloadText.value
-                                    ? h('p', { class: 'plugin-laya-dock-note' }, downloadText.value)
-                                    : h('button', {
-                                        class: 'ss-button',
-                                        onClick: startDownload,
-                                    }, '下载本地模型（约 617 MB，从镜像站）'),
-                            ],
-                ], isApiMode.value ? 'API 模式' : '本地模型'),
-
-                // —— 导出与防卡顿 ——
-                renderSection('archive', '导出与防卡顿', [
-                    h('div', { class: 'plugin-laya-dock-grid' }, [
+                    // —— 分析控制 ——
+                    h('div', { class: 'plugin-laya-dock-control' }, [
                         h('button', {
                             class: 'ss-button plugin-laya-dock-primary',
-                            disabled: archive.busy || stats.value.messages === 0,
-                            onClick: exportNow,
-                        }, archive.busy ? '导出中…' : '导出分析结果'),
-                        h('button', { class: 'ss-button', onClick: pickArchiveDir }, '选目录'),
-                        h('button', { class: 'ss-button', onClick: openArchiveDir }, '打开目录'),
+                            disabled: running.value || !chat.value.key,
+                            onClick: analyzeNow,
+                        }, running.value ? `分析中（${phase.value || '…'}）` : '分析当前会话'),
+                        h('button', {
+                            class: 'ss-button',
+                            disabled: !pipelineRunning.value,
+                            onClick: stopAnalyze,
+                        }, '停止'),
+                    ]),
+                    running.value ? h('div', { class: 'plugin-laya-dock-bar' }, [h('i')]) : null,
+                    message.value ? h('p', { class: 'plugin-laya-dock-msg' }, message.value) : null,
+
+                    // —— 授权（核心）——
+                    renderSection('authorize', '分析授权', [
+                        renderSwitch(
+                            chat.value.label ? `持续分析「${chat.value.label}」` : '持续分析当前会话',
+                            '打开后进入该会话、收到新消息都会自动分析',
+                            armed.value,
+                            toggleArmed,
+                            !chat.value.key,
+                        ),
+                        renderSwitch(
+                            '跟随新消息',
+                            '已开启分析的会话里，新消息到达时继续分析',
+                            display.followNewMessages,
+                            (value) => setDisplay('followNewMessages', value),
+                        ),
+                        h('p', { class: 'plugin-laya-dock-note' }, chat.value.key
+                            ? (armed.value
+                                ? '已开启：这个会话会被持续分析，关掉开关即停止。'
+                                : '未开启：插件不会读取、也不会分析这个会话的聊天记录。')
+                            : '先打开一个会话，才能为它开启分析。'),
+                    ], armed.value ? '已开启' : '未开启'),
+
+                    // —— 显示 ——
+                    renderSection('display', '显示', [
+                        renderSwitch('消息标签', '在消息下方显示情绪与意图标签',
+                            display.showLabels, (value) => setDisplay('showLabels', value)),
+                        renderSwitch('标签细节', '在标签后附带置信度',
+                            display.showDetail, (value) => setDisplay('showDetail', value)),
+                        renderSwitch('会话情绪徽标', '在聊天页顶部显示当前会话的整体情绪',
+                            display.showBadge, (value) => setDisplay('showBadge', value)),
+                        renderSwitch('隐藏窗口按钮', '隐藏标题栏的最小化 / 关闭按钮（可随时关回来）',
+                            display.hideWindowButtons, (value) => setDisplay('hideWindowButtons', value)),
+                    ]),
+
+                    // —— 推理后端与加速（默认折叠）——
+                    renderSection('runtime', '推理后端与加速', [
+                        renderField('推理模式', h('select', {
+                                class: 'plugin-laya-dock-select',
+                                value: display.backendMode,
+                                onChange: (event) => setDisplay('backendMode', event.target.value),
+                            }, [
+                                h('option', { value: 'local' }, '本地模型（ONNX）'),
+                                h('option', { value: 'api' }, 'API 接口'),
+                            ])),
+                            isApiMode.value
+                                ? h('p', { class: 'plugin-laya-dock-note' },
+                                    'API 模式：在「设置 → 附加」里填写接口地址 / 模型名 / 密钥，重新加载界面后生效。')
+                                : [
+                                    renderField('提供者', h('select', {
+                                        class: 'plugin-laya-dock-select',
+                                        value: perf.provider,
+                                        onChange: (event) => { perf.provider = event.target.value },
+                                    }, PROVIDER_OPTIONS.map((opt) => h('option', {
+                                        value: opt.value,
+                                        selected: perf.provider === opt.value,
+                                    }, opt.label)))),
+                                    renderField('线程', renderNumberInput(
+                                        perf.threads, 1, 16, (value) => { perf.threads = value })),
+                                    renderField('批大小', renderNumberInput(
+                                        perf.batchSize, 1, 32, (value) => { perf.batchSize = value })),
+                                    renderField('执行模式', h('select', {
+                                        class: 'plugin-laya-dock-select',
+                                        value: perf.executionMode,
+                                        onChange: (event) => { perf.executionMode = event.target.value },
+                                    }, [
+                                        h('option', { value: 'sequential' }, '串行（稳定延迟）'),
+                                        h('option', { value: 'parallel' }, '并行（单批吞吐）'),
+                                    ])),
+                                    h('div', { class: 'plugin-laya-dock-grid' }, [
+                                        h('button', {
+                                            class: 'ss-button plugin-laya-dock-primary',
+                                            disabled: perfBusy.value,
+                                            onClick: applyPerf,
+                                        }, perfBusy.value ? '应用中…' : '应用设置'),
+                                        h('button', {
+                                            class: 'ss-button',
+                                            disabled: perfBusy.value || status.value?.available === false,
+                                            onClick: prewarmModel,
+                                        }, '装载 / 预热'),
+                                    ]),
+                                    h('p', { class: 'plugin-laya-dock-note' },
+                                        `本机可用：${(status.value?.availableProviders || ['cpu']).join('、')}；` +
+                                        `当前尝试顺序：${(status.value?.providerHint || [perf.provider]).join(' → ')}`),
+                                    h('p', { class: 'plugin-laya-dock-note' },
+                                        'GPU（DirectML）首次装载需要编译着色器，可能停十几秒，属正常现象；' +
+                                        '装载失败会自动退回 CPU，点「装载 / 预热」可以提前看到结果。'),
+                                    downloadText.value
+                                        ? h('p', { class: 'plugin-laya-dock-note' }, downloadText.value)
+                                        : h('button', {
+                                            class: 'ss-button',
+                                            onClick: startDownload,
+                                        }, '下载本地模型（约 617 MB，从镜像站）'),
+                                ],
+                    ], isApiMode.value ? 'API 模式' : '本地模型'),
+
+                    // —— 导出与防卡顿 ——
+                    renderSection('archive', '导出与防卡顿', [
+                        h('div', { class: 'plugin-laya-dock-grid' }, [
+                            h('button', {
+                                class: 'ss-button plugin-laya-dock-primary',
+                                disabled: archive.busy || stats.value.messages === 0,
+                                onClick: exportNow,
+                            }, archive.busy ? '导出中…' : '导出分析结果'),
+                            h('button', { class: 'ss-button', onClick: pickArchiveDir }, '选目录'),
+                            h('button', { class: 'ss-button', onClick: openArchiveDir }, '打开目录'),
                     ]),
                     renderSwitch('导出后清空记录',
                         '导出成功后清掉插件内的分析记录，界面立刻回到轻量状态（聊天记录不受影响）',
@@ -809,9 +929,19 @@ export function createDockComponent({ host, runtime, store, actions }) {
                     ]),
                 ]),
 
-                h('p', { class: 'plugin-laya-dock-foot' },
-                    '全部推理都在本机完成，结果只写入插件自己的存储目录，不改动聊天记录。'),
-            ])
+                        h('p', { class: 'plugin-laya-dock-foot' },
+                            '全部推理都在本机完成，结果只写入插件自己的存储目录，不改动聊天记录。'),
+                    ]),
+
+                    // —— 右下角缩放手柄：拖大拖小，双击复位成自适应 ——
+                    h('div', {
+                        class: 'plugin-laya-dock-resizer',
+                        title: '拖动调整面板大小，双击复位',
+                        onMousedown: onResizeStart,
+                        onDblclick: resetSize,
+                    }),
+                ])
+            }
 
             //#endregion
 
@@ -819,13 +949,23 @@ export function createDockComponent({ host, runtime, store, actions }) {
 
             let timer = null
             let stopSettingListener = null
+            let onResize = null
 
             onMounted(() => {
                 syncDisplay()
                 refreshContext()
                 refreshStatus()
                 // 上次记住的位置可能已经超出当前窗口（换显示器 / 改过窗口尺寸）
-                nextTick(clampIntoView)
+                nextTick(() => {
+                    clampIntoView()
+                    measurePanel()
+                })
+                // 窗口尺寸变了要重新夹紧并重算锚点，否则面板会停在屏幕外
+                onResize = () => {
+                    clampIntoView()
+                    if (open.value) measurePanel()
+                }
+                window.addEventListener('resize', onResize)
                 // 会话、消息列表都在 Pinia 里，用轮询读比注册多个 watch 更省事。
                 // 防卡顿：只在面板展开（或正在拖动）且页面可见时才轮询，
                 // 收成悬浮球时 stats() 的遍历就完全不发生。
@@ -849,8 +989,12 @@ export function createDockComponent({ host, runtime, store, actions }) {
                 timer = null
                 if (stopSettingListener) stopSettingListener()
                 stopSettingListener = null
+                if (onResize) window.removeEventListener('resize', onResize)
+                onResize = null
                 window.removeEventListener('mousemove', onDragMove)
                 window.removeEventListener('mouseup', onDragEnd)
+                window.removeEventListener('mousemove', onResizeMove)
+                window.removeEventListener('mouseup', onResizeEnd)
             })
 
             //#endregion

@@ -393,14 +393,20 @@
     position: fixed;
     right: 22px;
     bottom: 22px;
-    width: 322px;
-    max-height: min(74vh, 640px);
-    overflow-y: auto;
+    /*
+     * 宽度自适应：窄窗口自动收窄（留 24px 边距），宽窗口最多 322px；
+     * 高度同理，矮窗口按 78vh 收，够高才到 640px。用户拖过右下角手柄后
+     * 由内联样式覆盖这里的 width / max-height。
+     */
+    width: min(322px, calc(100vw - 24px));
+    max-height: min(78vh, 640px);
+    min-width: 240px;
+    min-height: 160px;
+    /* 外层不滚动：内容滚动交给 .plugin-laya-dock-body，标题与缩放手柄才固定 */
+    overflow: hidden;
     pointer-events: auto;
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    padding: 10px 12px 12px;
     border-radius: 14px;
     background: color-mix(in srgb, var(--color-card, var(--color-font)) 8%, #1c1c1e);
     border: 1px solid color-mix(in srgb, var(--color-font-2) 26%, transparent);
@@ -412,10 +418,50 @@
     cursor: grabbing;
     user-select: none;
 }
-.plugin-laya-dock-panel::-webkit-scrollbar {
+
+/* 右下角缩放手柄：拖大拖小，双击复位成自适应 */
+.plugin-laya-dock-resizer {
+    position: absolute;
+    right: 2px;
+    bottom: 2px;
+    width: 16px;
+    height: 16px;
+    cursor: nwse-resize;
+    border-right: 2px solid color-mix(in srgb, var(--color-main) 55%, transparent);
+    border-bottom: 2px solid color-mix(in srgb, var(--color-main) 55%, transparent);
+    border-bottom-right-radius: 12px;
+    opacity: .55;
+    transition: opacity .15s;
+}
+.plugin-laya-dock-resizer:hover {
+    opacity: 1;
+}
+
+/* 窄窗口：整体收紧一点，免得面板挤满整屏 */
+@media (max-width: 520px) {
+    .plugin-laya-dock-panel {
+        width: calc(100vw - 16px);
+        min-width: 0;
+        padding: 8px 9px 10px;
+        font-size: 0.72rem;
+    }
+    .plugin-laya-dock-field {
+        grid-template-columns: 56px 1fr;
+    }
+}
+/* 内容层：真正滚动的地方 */
+.plugin-laya-dock-body {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 10px 12px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.plugin-laya-dock-body::-webkit-scrollbar {
     width: 6px;
 }
-.plugin-laya-dock-panel::-webkit-scrollbar-thumb {
+.plugin-laya-dock-body::-webkit-scrollbar-thumb {
     background: var(--color-font-2);
     border-radius: 3px;
 }
