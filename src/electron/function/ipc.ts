@@ -19,6 +19,7 @@ import { Connector } from './connector.ts'
 import { logLevel } from '../index.ts'
 import ScanNetwork from './scannetwork.ts'
 import { execSync } from 'child_process'
+import { regAddonIpc } from './addon-bridge.ts'
 
 let connector = undefined as Connector | undefined
 const store = new Store()
@@ -679,4 +680,7 @@ export function regIpcListener() {
         }
     })
 
+    // 注册第三方插件相关 IPC
+    // 框架层：插件私有存储 / 通用文件能力
+    regAddonIpc()
 }

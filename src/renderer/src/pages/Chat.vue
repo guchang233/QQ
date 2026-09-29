@@ -56,8 +56,10 @@
                     </template>
                 </span>
             </div>
+            <PluginChatBadge />
             <div class="space" />
             <div class="more">
+                <PluginToolbarButtons />
                 <font-awesome-icon :icon="['fas', 'ellipsis-vertical']" @click="openChatInfoPan" />
             </div>
         </div>
@@ -565,6 +567,8 @@ import SendUtil from '@renderer/function/sender'
 import Option, { get } from '@renderer/function/option'
 import Info from '@renderer/pages/Info.vue'
 import MsgBody from '@renderer/components/MsgBody.vue'
+import PluginChatBadge from '@renderer/plugin/components/PluginChatBadge.vue'
+import PluginToolbarButtons from '@renderer/plugin/components/PluginToolbarButtons.vue'
 import NoticeBody from '@renderer/components/NoticeBody.vue'
 import FacePan from '@renderer/components/FacePan.vue'
 import MergePan from '@renderer/components/MergePan.vue'

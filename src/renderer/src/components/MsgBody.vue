@@ -359,6 +359,7 @@
             </div>
         </div>
         <!-- 插件消息标签（情绪 / 意图），由插件宿主维护 -->
+        <PluginMsgDeco :message-id="data.message_id" />
         <div v-if="data.fake_msg == true"
             :class="'sending right' + (isMe ? ' me' : '')">
             <font-awesome-icon :icon="['fas', 'spinner']" />
@@ -431,6 +432,7 @@ import JsonSegComp from './msg-component/JsonSegComp.vue'
 import XmlSegComp from './msg-component/XmlSegComp.vue'
 import VoiceMsg from './VoiceMsg.vue'
 import { addMusic, MusicInfo } from './MusicPlayer.vue'
+import PluginMsgDeco from '@renderer/plugin/components/PluginMsgDeco.vue'
 
 type Msg = any
 type IUser = any

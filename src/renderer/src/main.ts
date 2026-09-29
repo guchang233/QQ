@@ -82,3 +82,12 @@ if(import.meta.env.DEV) {
     console.log('[ SSystem Bootloader Loading …… core/sardos-core ]')
 }
 console.log('[ SSystem Bootloader Loading …… core/ssqq-core ]')
+
+// 装载第三方插件（清单见 plugins/index.json）
+import { initPluginHost, disposePlugins } from './plugin'
+initPluginHost(packageInfo.version).catch((e) => {
+    console.error('[插件宿主] 初始化失败', e)
+})
+window.addEventListener('beforeunload', () => {
+    disposePlugins()
+})
