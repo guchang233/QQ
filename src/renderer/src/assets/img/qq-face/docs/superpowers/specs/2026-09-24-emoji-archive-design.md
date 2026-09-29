@@ -1,0 +1,175 @@
+# QQNT 表情归档：保留下架表情与历史版本
+
+## 目标
+
+- QQ 从资源包中删除的表情（季节限定等）继续保留在展示库，并标注为已下架。
+- 表情资源被 QQ 替换时，旧文件作为历史版本保留，可在详情页切换查看。
+- 记录每个表情被本库首次 / 最后一次同步到的 QQ 版本。
+- 重新设计详情页以展示完整元数据；全站配色改用 Koishi 品牌色。
+- 以上均由 `pnpm run gen:qqnt` 自动完成；现有 `_index.json` 对第三方保持不变。
+
+## 版本号来源
+
+读取 `~/Library/Containers/com.tencent.qq/Data/Library/Application Support/QQ/versions/config.json` 的 `curVersion`（形如 `7.0.2-53644`），作为本次同步的版本 `curVersion`。
+
+`default_config.json` 改为直接从 `versions/<curVersion>/QQUpdate.app/Contents/Resources/app/resource/default-emojis/default_config.json` 读取，删除按 mtime 挑选版本目录的逻辑。
+
+`/Applications/QQ.app` 的 Info.plist 是初装版本，热更新后不变，不可用。
+
+## 版本字段语义
+
+版本字段来自本库的同步记录，同步由维护者不定期手动执行，**不是** QQ 官方的上架 / 下架版本：
+
+- `firstSeenIn`：本库第一次同步到该表情资源的版本。表情实际上架可能更早（上界）。
+- `lastSeenIn`：本库最后一次同步到该表情资源的版本。表情实际删除发生在此之后、下一次同步之前（下界）。
+- 「同步到」指 QQ 资源目录中存在 `<emojiId>/` 资源目录；仅在配置文件中出现、从无资源目录的条目不设任何版本字段。
+
+## 资源目录布局
+
+```
+public/assets/qq_emoji/
+  <emojiId>/
+    png/ apng/ lottie/          # 当前版本
+    _history/<lastSeenIn>/      # 最后见于 <lastSeenIn> 的旧文件
+      png/ apng/ lottie/
+  _index.json                   # v1，结构不变
+  _index.v2.json                # v2
+```
+
+## 索引
+
+### `_index.json`（v1）
+
+结构与现状完全一致，只包含未下架（`removed` 不为真）的表情，不含 v2 新增字段。对现有表情，同一份 QQ 数据生成的 v1 索引与现状逐字节相同。
+
+### `_index.v2.json`
+
+```ts
+interface QqEmojiIndexV2 {
+  qqntVersion: string // 最近一次同步的 curVersion
+  emojis: QqSysEmojiV2[] // 含已下架表情，排序规则同 v1
+}
+
+interface QqSysEmojiHistory {
+  firstSeenIn?: string // 这一版资源首次同步到的版本
+  lastSeenIn: string // 即 _history 下的目录名
+  assets: QqSysEmojiAsset[]
+}
+
+interface QqSysEmojiV2 extends QqSysEmojiWithAssets {
+  firstSeenIn?: string
+  lastSeenIn?: string
+  assetsFirstSeenIn?: string // 当前这一版资源首次同步到的版本；仅在有历史版本时存在
+  removed?: true
+  history?: QqSysEmojiHistory[] // 按 lastSeenIn 降序；无历史时省略
+}
+```
+
+版本号比较：按 `.` / `-` 切分后逐段数值比较（`6.9.87-44204` < `6.9.98-51102` < `7.0.2-53644`）。
+
+## 同步算法
+
+不再把输出目录整体移到 `.backup` 后全量复制（删除 `backupExistingFiles` 与 `BACKUP_RELATIVE_PATH`，git 即备份）。流程：
+
+1. 读取 `curVersion`；读取上一份 `_index.v2.json` 为 `prev`（不存在则报错终止，首份由数据补录生成）。
+2. 分别列出 QQ 资源目录与输出目录下 `<emojiId>/{png,apng,lottie}/**` 的文件及内容哈希（`_history/` 不参与比较，跳过 `JUNK_FILE_NAMES`）。
+3. 纯函数 `planEmojiSync(source, target)` 得出动作：
+   - 源有、目标无 → `copy`
+   - 两边都有且哈希不同 → `archive` + `copy`
+   - 两边都有且哈希相同 → 无动作
+   - 表情目录在源中存在，但目标中某文件在源中不存在 → `archive`
+   - 表情目录在源中整体不存在 → 无动作
+4. 执行动作。`archive` 把旧文件移入 `<emojiId>/_history/<prev.qqntVersion>/` 下的同一相对路径；目标文件已存在时报错终止。
+5. `face_config.json` 照旧覆盖复制到输出目录。
+6. 照旧加载 face_config / default_config / 补充配置，扫描当前资源；扫描 `<emojiId>/_history/*/{png,apng,lottie}` 生成 `history`。
+7. 逐个表情计算版本字段（`p` 为 `prev.emojis` 中同 id 条目）：
+   - 源中存在该表情目录：`lastSeenIn = curVersion`；`firstSeenIn = p?.lastSeenIn ? p.firstSeenIn : curVersion`（`p.firstSeenIn` 缺省时保持缺省）；不设 `removed`。
+   - 源中不存在、输出目录中存在：`removed = true`；`firstSeenIn` / `lastSeenIn` 沿用 `p`。
+   - 两处都不存在：不设版本字段。
+8. 计算各资源版本的首次同步版本（`archived` 指本次该表情有文件被归档）：
+   - 本次新归档的历史版本：`firstSeenIn = p.assetsFirstSeenIn ?? p.firstSeenIn`；其余历史版本沿用 `p.history` 中同 `lastSeenIn` 条目的 `firstSeenIn`。
+   - `assetsFirstSeenIn`：`archived` 时为 `curVersion`，否则沿用 `p`；`history` 为空时不设。
+9. 已下架表情的元数据在配置加载后 `describe` 仍为空时，沿用 `p` 的元数据字段（`assets`、`history`、版本字段除外）。
+10. 写出 `_index.v2.json` 与 `_index.json`。
+
+## 同步结束输出
+
+- 本次归档了旧文件的表情 id（便于检查并删除无意义的旧版，例如单帧占位图被补成动画的情况；删除对应 `_history/<version>/` 目录后重新生成即可）。
+- 本次新下架的表情 id（`removed` 且 `p` 未下架）。
+- 本次新增的表情 id（`firstSeenIn === curVersion`）。
+- 建议的 commit message：`chore: qqnt <curVersion>`。
+
+## 前端
+
+### 数据与列表
+
+- store 改为读取 `_index.v2.json`，`allEmojiList` 取 `emojis`，并暴露 `qqntVersion`。
+- 列表页标题区显示「数据同步自 QQ <qqntVersion>」。
+- `QEmojiMiniCard`：`removed` 时显示「已下架」标记。
+
+### 详情页 `pages/qqnt/[id].vue`（重新设计）
+
+同时服务开发者（查 ID、复制字段）与普通用户（看动图、下载）。自上而下：
+
+1. **版本标签页**：`history` 非空时显示。第一个为当前资源（标签为该表情的 `lastSeenIn`，标注「最新」），其后按 `history` 顺序排列，默认选中当前资源。选中的标签决定整页使用的资源集合 `activeAssets`；元数据不随标签变化。
+2. **主区块**（桌面左右两栏，窄屏上下堆叠）：
+   - 版本信息行显示选中版本自身的「收录于 / 最后见于」：当前资源在有历史版本时用 `assetsFirstSeenIn`，否则用 `firstSeenIn`；历史版本用条目自身字段。
+   - 左（桌面端 sticky）：大预览，优先 APNG，其次 Lottie，再次 PNG；下方操作按钮：下载、转 GIF、复制图片。均基于 `activeAssets`。
+   - 右：名称与 `#emojiId`；状态徽章（已下架 / 隐藏 / `emojiType === 1` 时的「超级表情」）；「收录于 <firstSeenIn> · 最后见于 <lastSeenIn>」（缺省项不显示）；关联词汇标签（点击跳转搜索）；元数据分组键值表（点击值复制，宽屏 2×2、1024px 以下单列）：
+     - 标识：`emojiId`、`describe`、`qzoneCode`、`qcid`
+     - 动画贴纸：`emojiType`、`aniStickerPackId`、`aniStickerId`、`animationWidth × animationHeigh`
+     - 显示：`isHide`、`startTime`、`endTime`
+     - 收录：`firstSeenIn`、`lastSeenIn`、`removed`
+3. **资源**：图片与 Lottie 合并为一个区块，每个资源一个小方块：预览、类型标签、文件名、下载、新窗口打开、复制路径。基于 `activeAssets`。
+4. **原始 JSON**：页面底部默认折叠的独立区块，附复制按钮，替代现有调试信息区块。
+
+### 配色（全站）
+
+站点仅深色模式。`docs/styles/index.sass` 中：
+
+- 删除 `--primary-gradient`、`--secondary-gradient`、`--success-gradient` 及 `body` 的径向渐变背景。
+- 新增 Koishi 品牌色 token（取自 Koishi logo 与 koishi.chat 深色主题）：
+  - `--color-primary: #5546a3`：实心按钮、选中标签等填充色（上置白字）
+  - `--color-primary-text: #aa99ff`：深色背景上的强调文字、链接、图标
+  - `--color-primary-soft: rgba(170, 153, 255, 0.14)`：悬停底色、徽章底色
+- 删除未被使用的 `--shadow-glow`。
+- 所有 `var(--primary-gradient)` 与硬编码的 `rgba(102, 126, 234, …)` / `rgba(118, 75, 162, …)` 渐变替换为上述 token（涉及 `GlobalHeader`、`GlobalFooter`、`QEmojiMiniCard`、`pages/qqnt/index.vue`、`pages/qqnt/[id].vue`）。渐变文字（`background-clip: text`）改为 `--color-primary-text` 纯色文字。
+
+## 数据补录
+
+一次性脚本（放在临时目录，不入库）根据 git 历史生成首份 `_index.v2.json` 所需的版本字段与历史文件。同步提交与版本对应：
+
+| 提交 | 版本 |
+|---|---|
+| `1211f8a` | 基线（版本未知） |
+| `a24f2e4` | `6.9.82-40366` |
+| `848b168` 至 `851fcd8` | 取自 commit message `chore: qqnt <version>` |
+
+`a24f2e4` 的 commit message 只有 build 号 `40366`。NapCatQQ `packages/napcat-core/external/appid.json` 中 Windows `9.9.22` 起于 build `40362`，macOS `6.9.82` 与 Windows `9.9.22` 同属 build `40768`，据此推定为 `6.9.82-40366`。
+
+- `firstSeenIn`：表情目录首次出现的提交对应版本；出现在基线中的不设。
+- `lastSeenIn`：当前均存在，取 `7.0.2-53644`。
+- `332` 当前资源在 `381a3bc` 换入，`assetsFirstSeenIn` 为 `6.9.87-44204`。
+- 历史文件：从 `381a3bc^` 取出 `332/png/332.png`、`332/apng/332.png`（「/举牌牌」2025 版），放入 `332/_history/6.9.86-42941/` 对应子目录。`344` 在该提交中的旧 apng 是单帧占位图，不补录。
+- 补录后运行 `gen:qqnt` 生成正式索引。
+
+## 测试
+
+使用 `node:test`，经 `tsx` 运行。`planEmojiSync`、版本字段计算、版本号比较提取为无文件系统依赖的纯函数，测试覆盖：
+
+- 新增文件 → copy
+- 同名文件内容变化 → archive + copy
+- 表情内单个文件被删除 → archive
+- 整个表情目录消失 → 无动作，版本字段计算得出 `removed`，`firstSeenIn` / `lastSeenIn` 沿用
+- 下架后重新上架 → 不再 `removed`，`lastSeenIn` 更新，`firstSeenIn` 不变
+- 首次出现资源的表情（`p` 无 `lastSeenIn`）→ `firstSeenIn = curVersion`
+- 基线表情（`p` 有 `lastSeenIn` 无 `firstSeenIn`）→ `firstSeenIn` 保持缺省
+- 版本号比较
+
+最后在本机运行一次 `gen:qqnt`，确认 `_index.json` 无 diff、`_index.v2.json` 符合预期。
+
+前端用浏览器截图人工验收：列表页、普通表情详情（如 `344`）、带历史版本的详情（`332`，切换标签后资源随之变化）、窄屏布局。
+
+## 文档
+
+README 的 QQNT 部分补充：`_index.v2.json` 地址与结构、版本字段语义（来自本库同步记录，非官方上下架版本）、已下架表情与历史版本的保留规则、`curVersion` 来源。
