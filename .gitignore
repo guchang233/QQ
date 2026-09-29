@@ -23,3 +23,18 @@ notice_local.json
 # electron-vite dev 生成的临时配置副本
 electron.vite.config.*.mjs
 .git-vendored/
+
+# tsc -b (tsconfig.node.json, emitDeclarationOnly) 生成的声明产物，不要提交
+/electron.vite.config.d.ts
+/vite.config.d.ts
+/src/electron/index.d.ts
+/src/preload/index.d.ts
+/src/electron/function/addon-bridge.d.ts
+/src/electron/function/connector.d.ts
+/src/electron/function/elements.d.ts
+/src/electron/function/ipc.d.ts
+/src/electron/function/scannetwork.d.ts
+/src/electron/function/touchbar.d.ts
+/src/electron/function/util.d.ts
+/ssqq.napcat-plugin/index.d.ts
+/ssqq.napcat-plugin/vite.config.d.ts
